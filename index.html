@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PortProxy - 端口转发管理器</title>
+<style>
+:root {
+  --bg: #f0f2f5;
+  --card: #ffffff;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-light: #dbeafe;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --danger-light: #fee2e2;
+  --text: #1e293b;
+  --text-secondary: #64748b;
+  --text-light: #94a3b8;
+  --border: #e2e8f0;
+  --success: #22c55e;
+  --success-light: #dcfce7;
+  --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+  --radius: 10px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh;
+}
+.container { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo { width: 44px; height: 44px; background: linear-gradient(135deg, #2563eb, #3b82f6); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-size: 22px; flex-shrink: 0; }
+.header h1 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+.header .subtitle { font-size: 13px; color: var(--text-secondary); }
+.btn-refresh { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 16px; font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all .15s; white-space: nowrap; }
+.btn-refresh:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; margin-bottom: 20px; }
+.card-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.card-title .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
+.form-group label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 5px; }
+.form-group input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; color: var(--text); background: var(--card); transition: border-color .15s, box-shadow .15s; }
+.form-group input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.form-group input::placeholder { color: var(--text-light); }
+.btn-add { background: var(--primary); color: white; border: none; border-radius: 8px; padding: 9px 22px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; height: 38px; }
+.btn-add:hover { background: var(--primary-hover); }
+.btn-add:active { transform: translateY(1px); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+thead th { text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .3px; border-bottom: 2px solid var(--border); }
+tbody td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 13px; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: #f8fafc; }
+.arrow { color: var(--text-light); text-align: center; }
+.protocol-tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--primary-light); color: var(--primary); font-family: -apple-system, sans-serif; }
+.btn-delete { background: var(--danger-light); color: var(--danger); border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; font-family: -apple-system, sans-serif; }
+.btn-delete:hover { background: var(--danger); color: white; }
+.empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); }
+.empty-state .icon { font-size: 36px; margin-bottom: 10px; }
+.empty-state p { font-size: 14px; }
+.loading { text-align: center; padding: 30px; color: var(--text-light); font-size: 14px; }
+.spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 500; box-shadow: var(--shadow-md); opacity: 0; transition: all .3s cubic-bezier(.4,0,.2,1); z-index: 999; pointer-events: none; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.success { background: var(--success); color: white; }
+.toast.error { background: var(--danger); color: white; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 998; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.modal-overlay.show { opacity: 1; pointer-events: auto; }
+.modal { background: var(--card); border-radius: 12px; padding: 28px; max-width: 400px; width: 90%; box-shadow: var(--shadow-md); transform: scale(.95); transition: transform .2s; }
+.modal-overlay.show .modal { transform: scale(1); }
+.modal h3 { font-size: 17px; margin-bottom: 8px; }
+.modal p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; }
+.modal p code { background: var(--bg); padding: 2px 8px; border-radius: 4px; font-family: "SF Mono", Consolas, monospace; font-size: 13px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-cancel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 18px; font-size: 14px; cursor: pointer; color: var(--text-secondary); transition: all .15s; }
+.btn-cancel:hover { background: var(--bg); }
+.btn-confirm { background: var(--danger); color: white; border: none; border-radius: 8px; padding: 8px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; }
+.btn-confirm:hover { background: var(--danger-hover); }
+.btn-clear-all { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; transition: all .15s; }
+.btn-clear-all:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-light); }
+.table-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.rules-count { font-size: 13px; color: var(--text-secondary); }
+.rules-count strong { color: var(--primary); }
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr 1fr; }
+  .form-grid .btn-add { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">&#128279;</div>
+      <div>
+        <h1>端口转发管理器</h1>
+        <div class="subtitle">基于 Windows netsh interface portproxy</div>
+      </div>
+    </div>
+    <button class="btn-refresh" onclick="loadRules()">&#8635; 刷新</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot"></span> 添加转发规则</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>监听地址</label>
+        <input type="text" id="listenAddress" placeholder="0.0.0.0" value="0.0.0.0">
+      </div>
+      <div class="form-group">
+        <label>监听端口</label>
+        <input type="number" id="listenPort" placeholder="8080">
+      </div>
+      <div class="form-group">
+        <label>目标地址</label>
+        <input type="text" id="connectAddress" placeholder="192.168.1.100">
+      </div>
+      <div class="form-group">
+        <label>目标端口</label>
+        <input type="number" id="connectPort" placeholder="80">
+      </div>
+      <button class="btn-add" onclick="addRule()">+ 添加</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-header">
+      <div class="card-title" style="margin-bottom:0"><span class="dot"></span> 当前规则</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="rules-count" id="rulesCount"></span>
+        <button class="btn-clear-all" id="btnClearAll" onclick="confirmClearAll()" style="display:none">清空全部</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <div id="rulesBody">
+        <div class="loading"><span class="spinner"></span>加载中...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">确认删除</h3>
+    <p id="modalText">确定要删除这条规则吗？</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-confirm" id="modalConfirm">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var pendingDelete = null;
+var pendingClearAll = false;
+
+function loadRules() {
+  var body = document.getElementById('rulesBody');
+  body.innerHTML = '<div class="loading"><span class="spinner"></span>加载中...</div>';
+  fetch('/api/rules')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) { renderRules(data.rules); }
+      else { body.innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div><p>' + esc(data.error || '加载失败') + '</p></div>'; }
+    })
+    .catch(function(e) {
+      body.innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div><p>网络错误: ' + esc(e.message) + '</p></div>';
+    });
+}
+
+function renderRules(rules) {
+  var body = document.getElementById('rulesBody');
+  var count = document.getElementById('rulesCount');
+  var btnClear = document.getElementById('btnClearAll');
+  if (!rules || rules.length === 0) {
+    body.innerHTML = '<div class="empty-state"><div class="icon">&#128203;</div><p>暂无转发规则</p></div>';
+    count.textContent = '';
+    btnClear.style.display = 'none';
+    return;
+  }
+  count.innerHTML = '共 <strong>' + rules.length + '</strong> 条规则';
+  btnClear.style.display = 'inline-block';
+  var html = '<table><thead><tr><th>监听地址</th><th>监听端口</th><th></th><th>目标地址</th><th>目标端口</th><th>协议</th><th>操作</th></tr></thead><tbody>';
+  for (var i = 0; i < rules.length; i++) {
+    var r = rules[i];
+    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><button class="btn-delete" onclick="confirmDelete('' + escAttr(r.listenAddress) + '','' + escAttr(r.listenPort) + '')">删除</button></td></tr>';
+  }
+  html += '</tbody></table>';
+  body.innerHTML = html;
+}
+
+function addRule() {
+  var la = document.getElementById('listenAddress').value.trim();
+  var lp = document.getElementById('listenPort').value.trim();
+  var ca = document.getElementById('connectAddress').value.trim();
+  var cp = document.getElementById('connectPort').value.trim();
+
+  if (!lp) { showToast('请输入监听端口', 'error'); return; }
+  if (!ca) { showToast('请输入目标地址', 'error'); return; }
+
+  fetch('/api/rules', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp})
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) { showToast('规则添加成功', 'success'); loadRules(); }
+      else { showToast(data.error || '添加失败', 'error'); }
+    })
+    .catch(function(e) { showToast('网络错误: ' + e.message, 'error'); });
+}
+
+function confirmDelete(addr, port) {
+  pendingDelete = {addr: addr, port: port};
+  pendingClearAll = false;
+  document.getElementById('modalTitle').textContent = '确认删除';
+  document.getElementById('modalText').innerHTML = '确定要删除 <code>' + esc(addr) + ':' + esc(port) + '</code> 这条转发规则吗？';
+  document.getElementById('modalConfirm').textContent = '确认删除';
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function confirmClearAll() {
+  pendingDelete = null;
+  pendingClearAll = true;
+  document.getElementById('modalTitle').textContent = '确认清空';
+  document.getElementById('modalText').innerHTML = '确定要<strong>清空所有</strong>端口转发规则吗？此操作不可撤销。';
+  document.getElementById('modalConfirm').textContent = '确认清空';
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+  pendingDelete = null;
+  pendingClearAll = false;
+}
+
+document.getElementById('modalConfirm').addEventListener('click', function() {
+  closeModal();
+  if (pendingDelete) {
+    fetch('/api/rules/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({listenAddress: pendingDelete.addr, listenPort: pendingDelete.port})
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) { showToast('规则删除成功', 'success'); loadRules(); }
+        else { showToast(data.error || '删除失败', 'error'); }
+      })
+      .catch(function(e) { showToast('网络错误: ' + e.message, 'error'); });
+    pendingDelete = null;
+  } else if (pendingClearAll) {
+    fetch('/api/rules', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'clear'})
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) { showToast('已清空所有规则', 'success'); loadRules(); }
+        else { showToast(data.error || '清空失败', 'error'); }
+      })
+      .catch(function(e) { showToast('网络错误: ' + e.message, 'error'); });
+    pendingClearAll = false;
+  }
+});
+
+function showToast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  clearTimeout(t._timeout);
+  t._timeout = setTimeout(function() { t.classList.remove('show'); }, 3000);
+}
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = (s || '');
+  return d.innerHTML;
+}
+
+function escAttr(s) {
+  return (s || '').replace(/\/g, '\\').replace(/'/g, '\\\'');
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModal();
+});
+
+loadRules();
+</script>
+</body>
+</html>

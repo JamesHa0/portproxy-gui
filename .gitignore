@@ -1,0 +1,12 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# PyInstaller 构建产物（打包后的 exe 不进版本库）
+build/
+dist/
+
+# 操作系统
+Thumbs.db
+Desktop.ini
