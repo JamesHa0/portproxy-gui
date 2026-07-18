@@ -96,7 +96,9 @@ def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port=""):
     args.append("protocol=tcp")
     code, out, err = netsh(args)
     if code != 0:
-        raise RuntimeError(_friendly_error((err or out).strip()))
+        raw = (err or out).strip()
+        raise NetshError(_friendly_error(raw),
+                         need_admin=("提升" in raw or "elevation" in raw.lower()))
 
 
 # ---- validation -------------------------------------------------------
@@ -144,6 +146,13 @@ def _friendly_error(raw):
     if "parameter" in low:
         return "参数错误: " + raw.strip()
     return raw.strip() or "操作失败"
+
+
+class NetshError(Exception):
+    def __init__(self, message, need_admin=False):
+        super().__init__(message)
+        self.message = message
+        self.need_admin = need_admin
 
 
 # ---- HTTP handler -----------------------------------------------------
@@ -241,7 +250,11 @@ class Handler(BaseHTTPRequestHandler):
                                  "duplicate": True}, 409)
                 except Exception:
                     pass
-                do_netsh("add", la, lp, ca, cp)
+                try:
+                    do_netsh("add", la, lp, ca, cp)
+                except NetshError as e:
+                    return self._json({"ok": False, "error": e.message,
+                                       "needAdmin": e.need_admin}, 400)
                 self._json({"ok": True, "message": "rule added"})
             elif self.path == "/api/rules/delete":
                 la = str(data.get("listenAddress") or "").strip()
@@ -249,7 +262,11 @@ class Handler(BaseHTTPRequestHandler):
                 ok, res = validate_port(lp)
                 if not ok:
                     return self._json({"ok": False, "error": res}, 400)
-                do_netsh("delete", la, lp)
+                try:
+                    do_netsh("delete", la, lp)
+                except NetshError as e:
+                    return self._json({"ok": False, "error": e.message,
+                                       "needAdmin": e.need_admin}, 400)
                 self._json({"ok": True, "message": "rule deleted"})
             else:
                 self._json({"error": "not found"}, 404)
