@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -89,16 +89,29 @@ tbody tr:hover { background: #f8fafc; }
   .form-grid { grid-template-columns: 1fr 1fr; }
   .form-grid .btn-add { grid-column: 1 / -1; }
 }
+.admin-banner { display: flex; align-items: center; gap: 10px; background: var(--danger-light); border: 1px solid var(--danger); color: var(--danger-hover); padding: 12px 16px; border-radius: var(--radius); margin-bottom: 20px; font-size: 13px; line-height: 1.5; }
+.admin-banner .icon { font-size: 18px; flex-shrink: 0; }
+.admin-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+.admin-badge .dot { width: 7px; height: 7px; border-radius: 50%; }
+.admin-badge.ok { background: var(--success-light); color: #15803d; }
+.admin-badge.ok .dot { background: var(--success); }
+.admin-badge.no { background: var(--danger-light); color: var(--danger-hover); }
+.admin-badge.no .dot { background: var(--danger); }
 </style>
 </head>
 <body>
 <div class="container">
+  <div id="adminBanner" class="admin-banner" style="display:none">
+    <span class="icon">&#9888;</span>
+    <span>当前未以管理员身份运行，添加/删除规则可能失败。请右键“以管理员身份运行”启动本程序。</span>
+  </div>
   <div class="header">
     <div class="header-left">
       <div class="logo">&#128279;</div>
       <div>
         <h1>端口转发管理器</h1>
         <div class="subtitle">基于 Windows netsh interface portproxy</div>
+        <span id="adminBadge" class="admin-badge" style="display:none"></span>
       </div>
     </div>
     <button class="btn-refresh" onclick="loadRules()">&#8635; 刷新</button>
@@ -166,7 +179,7 @@ function loadRules() {
   fetch('/api/rules')
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (data.ok) { renderRules(data.rules); }
+      if (data.ok) { renderRules(data.rules); updateAdmin(data.admin); }
       else { body.innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div><p>' + esc(data.error || '加载失败') + '</p></div>'; }
     })
     .catch(function(e) {
@@ -174,6 +187,22 @@ function loadRules() {
     });
 }
 
+function updateAdmin(isAdmin) {
+  var badge = document.getElementById('adminBadge');
+  var banner = document.getElementById('adminBanner');
+  if (isAdmin === true) {
+    badge.className = 'admin-badge ok';
+    badge.innerHTML = '<span class="dot"></span>管理员';
+    banner.style.display = 'none';
+  } else if (isAdmin === false) {
+    badge.className = 'admin-badge no';
+    badge.innerHTML = '<span class="dot"></span>需管理员';
+    banner.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+    banner.style.display = 'none';
+  }
+}
 function renderRules(rules) {
   var body = document.getElementById('rulesBody');
   var count = document.getElementById('rulesCount');
@@ -189,7 +218,7 @@ function renderRules(rules) {
   var html = '<table><thead><tr><th>监听地址</th><th>监听端口</th><th></th><th>目标地址</th><th>目标端口</th><th>协议</th><th>操作</th></tr></thead><tbody>';
   for (var i = 0; i < rules.length; i++) {
     var r = rules[i];
-    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><button class="btn-delete" onclick="confirmDelete('' + escAttr(r.listenAddress) + '','' + escAttr(r.listenPort) + '')">删除</button></td></tr>';
+    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '">删除</button></td></tr>';
   }
   html += '</tbody></table>';
   body.innerHTML = html;
@@ -287,14 +316,22 @@ function esc(s) {
 }
 
 function escAttr(s) {
-  return (s || '').replace(/\/g, '\\').replace(/'/g, '\\\'');
+  return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeModal();
 });
 
+document.getElementById('rulesBody').addEventListener('click', function(e) {
+  var btn = e.target.closest ? e.target.closest('.btn-delete') : null;
+  if (!btn) return;
+  confirmDelete(btn.getAttribute('data-addr'), btn.getAttribute('data-port'));
+});
+
 loadRules();
 </script>
 </body>
 </html>
+
+

@@ -6,15 +6,26 @@ from tkinter import ttk, messagebox
 
 # ── netsh logic ──────────────────────────────────────
 
+def _decode(b):
+    """Decode subprocess bytes robustly (Chinese Windows uses GBK/CP936)."""
+    if not b:
+        return ""
+    for enc in ("gbk", "cp936", "utf-8", "latin-1"):
+        try:
+            return b.decode(enc)
+        except Exception:
+            continue
+    return b.decode("utf-8", errors="replace")
+
 def netsh(args):
     """Run netsh command. capture_output primary, shell redirect fallback."""
     try:
         r = subprocess.run(
             ["netsh", "interface", "portproxy"] + args,
-            capture_output=True, text=True,
+            capture_output=True,
         )
-        out = r.stdout or ""
-        err = r.stderr or ""
+        out = _decode(r.stdout)
+        err = _decode(r.stderr)
         if r.returncode != 0 and not out and not err:
             return _netsh_shell(args)
         return r.returncode, out, err
@@ -31,8 +42,8 @@ def _netsh_shell(args):
         output = ""
         if os.path.exists(tmp):
             try:
-                with open(tmp, "r", encoding="utf-8", errors="replace") as f:
-                    output = f.read()
+                with open(tmp, "rb") as f:
+                    output = _decode(f.read())
                 os.remove(tmp)
             except Exception:
                 pass
@@ -502,3 +513,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
