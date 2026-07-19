@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PortProxy GUI - netsh portproxy desktop manager (tkinter)"""
 
-import os, re, subprocess, tempfile, tkinter as tk, ctypes, sys
+import os, re, subprocess, tempfile, tkinter as tk, ctypes, sys, json
 from tkinter import ttk, messagebox
 
 # ── netsh logic ──────────────────────────────────────
@@ -94,6 +94,58 @@ def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port="", rty
 # ── validation helpers ───────────────────────────────
 
 TYPES = ("v4tov4", "v4tov6", "v6tov4", "v6tov6")
+
+def netsh_adv(args):
+    """Run a netsh advfirewall command."""
+    try:
+        r = subprocess.run(["netsh", "advfirewall"] + args, capture_output=True)
+        return r.returncode, _decode(r.stdout), _decode(r.stderr)
+    except Exception as e:
+        return 1, "", str(e)
+
+def fw_open(port, name):
+    """Allow inbound TCP on a port. Best-effort."""
+    code, out, err = netsh_adv(["firewall", "add", "rule",
+        "name=" + name, "dir=in", "action=allow", "protocol=TCP",
+        "localport=" + str(port)])
+    return code == 0
+
+def fw_close(port, name):
+    """Delete the inbound firewall rule we created. Best-effort."""
+    code, out, err = netsh_adv(["firewall", "delete", "rule",
+        "name=" + name])
+    return code == 0
+
+def import_rules(rules):
+    added, skipped = [], []
+    for r in rules:
+        rtype = str(r.get("type") or "v4tov4").strip().lower()
+        if rtype not in TYPES:
+            skipped.append(r); continue
+        la = str(r.get("listenAddress") or "").strip()
+        lp = str(r.get("listenPort") or "").strip()
+        ca = str(r.get("connectAddress") or "").strip()
+        cp = str(r.get("connectPort") or "").strip()
+        ok, _ = validate_port(lp)
+        if not ok:
+            skipped.append(r); continue
+        ok, _ = validate_ip(ca)
+        if not ok:
+            skipped.append(r); continue
+        la_norm = la if la else "0.0.0.0"
+        dup = False
+        for ex in list_rules():
+            exa = "0.0.0.0" if ex["listenAddress"] in ("", "*") else ex["listenAddress"]
+            if ex.get("type") == rtype and exa == la_norm and ex["listenPort"] == lp:
+                dup = True; break
+        if dup:
+            skipped.append(r); continue
+        try:
+            do_netsh("add", la, lp, ca, cp, rtype=rtype)
+            added.append(r)
+        except Exception:
+            skipped.append(r)
+    return added, skipped
 
 def is_admin():
     try:
@@ -322,6 +374,13 @@ class PortProxyApp:
         type_combo = ttk.Combobox(form, textvariable=self.rule_type, state="readonly",
             values=list(TYPES), width=9, font=FONT_UI)
         type_combo.grid(row=0, column=10, padx=(0, 8))
+        self.fw_var = tk.BooleanVar(value=False)
+        fw_chk = tk.Checkbutton(form, text="放行防火墙", variable=self.fw_var,
+            bg=CLR_CARD, fg=CLR_TEXT_SEC, font=FONT_SMALL, cursor="hand2")
+        fw_chk.grid(row=0, column=11, padx=(4, 8))
+        self.edit_var = tk.StringVar(value="")
+        self.edit_lp = tk.StringVar(value="")
+        self.edit_addr = tk.StringVar(value="")
         add_btn = tk.Button(form, text="+ 添加规则", command=self.add_rule,
             bg=CLR_PRIMARY, fg="#ffffff", font=("Microsoft YaHei UI", 10, "bold"),
             bd=0, activebackground=CLR_PRIMARY_H, activeforeground="#ffffff",
@@ -347,6 +406,16 @@ class PortProxyApp:
             bd=1, relief="solid", activebackground="#fef2f2",
             activeforeground=CLR_DANGER_H, cursor="hand2", padx=12, pady=3)
         clear_btn.pack(side="right")
+        imp_btn = tk.Button(table_header, text="导入", command=self.import_json,
+            bg=CLR_CARD, fg=CLR_PRIMARY, font=FONT_UI,
+            bd=1, relief="solid", activebackground="#eff6ff",
+            activeforeground=CLR_PRIMARY_H, cursor="hand2", padx=12, pady=3)
+        imp_btn.pack(side="right", padx=(0, 8))
+        exp_btn = tk.Button(table_header, text="导出", command=self.export_json,
+            bg=CLR_CARD, fg=CLR_PRIMARY, font=FONT_UI,
+            bd=1, relief="solid", activebackground="#eff6ff",
+            activeforeground=CLR_PRIMARY_H, cursor="hand2", padx=12, pady=3)
+        exp_btn.pack(side="right", padx=(0, 8))
         tree_frame = tk.Frame(table_card, bg=CLR_CARD)
         tree_frame.pack(fill="both", expand=True, padx=20, pady=(0, 16))
         cols = ("listenAddr", "listenPort", "connectAddr", "connectPort", "protocol", "type")
@@ -358,12 +427,14 @@ class PortProxyApp:
         self.tree.heading("connectPort", text="目标端口")
         self.tree.heading("protocol", text="协议")
         self.tree.heading("type", text="类型")
+        self.tree.heading("actions", text="操作")
         self.tree.column("listenAddr", width=180, anchor="w")
         self.tree.column("listenPort", width=100, anchor="center")
         self.tree.column("connectAddr", width=180, anchor="w")
         self.tree.column("connectPort", width=100, anchor="center")
         self.tree.column("protocol", width=70, anchor="center")
         self.tree.column("type", width=80, anchor="center")
+        self.tree.column("actions", width=120, anchor="center")
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -371,6 +442,7 @@ class PortProxyApp:
         self.tree_menu = tk.Menu(self.root, tearoff=0, bg="#ffffff", fg=CLR_TEXT,
             font=FONT_UI, activebackground=CLR_PRIMARY, activeforeground="#ffffff",
             bd=1, relief="solid")
+        self.tree_menu.add_command(label="编辑选中规则", command=self.edit_selected)
         self.tree_menu.add_command(label="删除选中规则", command=self.delete_selected)
         self.tree.bind("<Button-3>", self._context_menu)
         self.tree.bind("<Delete>", lambda e: self.delete_selected())
@@ -435,7 +507,8 @@ class PortProxyApp:
                 self.tree.insert("", "end", values=(
                     "  " + r["listenAddress"], r["listenPort"],
                     "  " + r["connectAddress"], r["connectPort"],
-                    "TCP", r.get("type", "v4tov4")
+                    "TCP", r.get("type", "v4tov4"),
+                    r["listenPort"]
                 ), tags=(tag,))
             count = len(rules)
             self.rule_count_label.config(text="({})".format(count) if count else "")
@@ -449,6 +522,15 @@ class PortProxyApp:
         ca = self.connect_addr.get().strip()
         cp = self.connect_port.get().strip()
         rtype = self.rule_type.get().strip()
+        firewall = self.fw_var.get()
+        edit_rtype = self.edit_var.get()
+        edit_lp = self.edit_lp.get().strip()
+        edit_la = self.edit_addr.get().strip()
+        if edit_rtype and edit_lp:
+            try:
+                do_netsh("delete", edit_la if edit_la else "0.0.0.0", edit_lp, rtype=edit_rtype)
+            except Exception:
+                pass
 
         # Validate listen port
         ok, result = validate_port(lp)
@@ -486,7 +568,8 @@ class PortProxyApp:
         try:
             existing = list_rules()
             for r in existing:
-                if r.get("type") == rtype and r["listenPort"] == lp and (r["listenAddress"] == la or la == "0.0.0.0" or r["listenAddress"] == "0.0.0.0"):
+                editing_same = (edit_rtype and edit_lp and r.get("type") == edit_rtype and r["listenPort"] == edit_lp and (r["listenAddress"] == edit_la or edit_la == "0.0.0.0" or r["listenAddress"] == "0.0.0.0"))
+                if not editing_same and r.get("type") == rtype and r["listenPort"] == lp and (r["listenAddress"] == la or la == "0.0.0.0" or r["listenAddress"] == "0.0.0.0"):
                     if not messagebox.askyesno("规则可能重复",
                             "已存在监听端口 {} 的规则 ({} -> {})\n确定要继续添加吗？".format(
                                 lp, r["listenAddress"], r["connectAddress"]),
@@ -498,7 +581,9 @@ class PortProxyApp:
         self._set_status("正在添加规则...")
         try:
             do_netsh("add", la, lp, ca, cp, rtype=rtype)
-            self._set_status("规则添加成功", "ok")
+            if firewall:
+                fw_open(lp, "PortProxy_%s_%s" % (rtype, lp))
+            self._set_status("规则添加成功" + ("（已放行防火墙）" if firewall else ""), "ok")
             self.listen_port.delete(0, "end")
             self.connect_addr.delete(0, "end")
             self.connect_port.delete(0, "end")
@@ -565,6 +650,74 @@ class PortProxyApp:
             sys.exit(0)
         messagebox.showwarning("提权失败", "无法请求管理员权限。\n请右键本程序选择“以管理员身份运行”。", parent=self.root)
 
+
+    def edit_selected(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("提示", "请先选择一条规则", parent=self.root)
+            return
+        values = self.tree.item(sel[0])["values"]
+        addr = values[0].strip()
+        port = values[1]
+        rtype = values[5] if len(values) > 5 else "v4tov4"
+        self.listen_addr.delete(0, "end")
+        self.listen_addr.insert(0, addr if addr != "0.0.0.0" else "")
+        self.listen_port.delete(0, "end")
+        self.listen_port.insert(0, port)
+        self.connect_addr.delete(0, "end")
+        self.connect_port.delete(0, "end")
+        self.rule_type.set(rtype)
+        self.edit_var.set(rtype)
+        self.edit_addr.set(addr if addr != "0.0.0.0" else "")
+        self.edit_lp.set(port)
+        self._set_status("编辑模式：修改后点击添加将更新该监听点", "info")
+        self.listen_port.focus()
+
+    def export_json(self):
+        try:
+            rules = list_rules()
+        except Exception as e:
+            messagebox.showerror("错误", "读取规则失败:\n{}".format(str(e)), parent=self.root)
+            return
+        if not rules:
+            messagebox.showinfo("导出", "当前没有可导出的规则", parent=self.root)
+            return
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(defaultextension=".json",
+            filetypes=[("JSON 文件", "*.json")], title="导出规则")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(rules, f, ensure_ascii=False, indent=2)
+            self._set_status("已导出 {} 条规则".format(len(rules)), "ok")
+        except Exception as e:
+            messagebox.showerror("错误", "导出失败:\n{}".format(str(e)), parent=self.root)
+
+    def import_json(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(filetypes=[("JSON 文件", "*.json")], title="导入规则")
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                rules = json.load(f)
+        except Exception as e:
+            messagebox.showerror("错误", "读取文件失败:\n{}".format(str(e)), parent=self.root)
+            return
+        if not isinstance(rules, list):
+            messagebox.showerror("错误", "文件格式不正确：应为规则数组", parent=self.root)
+            return
+        try:
+            added, skipped = import_rules(rules)
+            msg = "已导入 {} 条规则".format(len(added))
+            if skipped:
+                msg += "，跳过 {} 条（重复或无效）".format(len(skipped))
+            self._set_status(msg, "ok" if added else "err")
+            messagebox.showinfo("导入完成", msg, parent=self.root)
+            self.refresh_rules()
+        except Exception as e:
+            messagebox.showerror("错误", "导入失败:\n{}".format(str(e)), parent=self.root)
     def show_about(self):
         messagebox.showinfo("关于 PortProxy",
             "端口转发管理器 v1.0\n\n"

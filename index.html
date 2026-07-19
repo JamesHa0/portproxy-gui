@@ -53,6 +53,14 @@ body {
 .btn-add { background: var(--primary); color: white; border: none; border-radius: 8px; padding: 9px 22px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; height: 38px; }
 .btn-add:hover { background: var(--primary-hover); }
 .btn-add:active { transform: translateY(1px); }
+.btn-import, .btn-export { background: var(--card); border: 1px solid var(--border); color: var(--primary); border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+.btn-import:hover, .btn-export:hover { border-color: var(--primary); background: var(--primary-light); }
+.btn-edit { background: var(--primary-light); color: var(--primary); border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; font-family: -apple-system, sans-serif; margin-right: 6px; }
+.btn-edit:hover { background: var(--primary); color: #fff; }
+.fw-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; user-select: none; cursor: pointer; }
+.fw-check input { width: 15px; height: 15px; cursor: pointer; }
+.edit-hint { display: none; margin-top: 12px; padding: 8px 12px; font-size: 12px; color: var(--primary); background: var(--primary-light); border-radius: 8px; }
+.edit-hint.show { display: block; }
 .form-note { margin: 14px 0 0; font-size: 12px; color: var(--text-secondary); }
 .form-note strong { color: var(--primary); }
 .table-wrap { overflow-x: auto; }
@@ -153,7 +161,9 @@ tbody tr:hover { background: #f8fafc; }
           <option value="v6tov6">v6tov6</option>
         </select>
       </div>
+      <label class="fw-check"><input type="checkbox" id="fwAllow"> 放行防火墙入站</label>
       <button class="btn-add" onclick="addRule()">+ 添加</button>
+      <div class="edit-hint" id="editHint"></div>
     </div>
     <p class="form-note">仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。</p>
   </div>
@@ -163,6 +173,9 @@ tbody tr:hover { background: #f8fafc; }
       <div class="card-title" style="margin-bottom:0"><span class="dot"></span> 当前规则</div>
       <div style="display:flex;gap:10px;align-items:center">
         <span class="rules-count" id="rulesCount"></span>
+        <button class="btn-export" id="btnExport" onclick="downloadExport()">导出</button>
+        <button class="btn-import" id="btnImport" onclick="document.getElementById('importFile').click()">导入</button>
+        <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importFile(this)">
         <button class="btn-clear-all" id="btnClearAll" onclick="confirmClearAll()" style="display:none">清空全部</button>
       </div>
     </div>
@@ -238,7 +251,7 @@ function renderRules(rules) {
   var html = '<table><thead><tr><th>监听地址</th><th>监听端口</th><th></th><th>目标地址</th><th>目标端口</th><th>协议</th><th>类型</th><th>操作</th></tr></thead><tbody>';
   for (var i = 0; i < rules.length; i++) {
     var r = rules[i];
-    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type||'v4tov4').toLowerCase()) + '</span></td><td><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">删除</button></td></tr>';
+    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type||'v4tov4').toLowerCase()) + '</span></td><td><button class="btn-edit" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">编辑</button><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">删除</button></td></tr>';
   }
   html += '</tbody></table>';
   body.innerHTML = html;
@@ -280,11 +293,14 @@ function addRule() {
   fetch('/api/rules', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp, type: document.getElementById('ruleType').value})
+    var fw = document.getElementById('fwAllow').checked;
+    var payload = {listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp, type: document.getElementById('ruleType').value, firewall: fw};
+    if (editState) { payload.editType = editState.type; payload.editListenPort = editState.listenPort; }
+    body: JSON.stringify(payload)
   })
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (data.ok) { showToast('规则添加成功', 'success'); loadRules(); }
+      if (data.ok) { showToast('规则添加成功', 'success'); cancelEdit(); loadRules(); }
       else { showToast(data.error || '添加失败', 'error'); if (data.needAdmin) updateAdmin(false); }
     })
     .catch(function(e) { showToast('网络错误: ' + e.message, 'error'); });
@@ -355,6 +371,67 @@ function elevate() {
     .catch(function(e){ showToast('网络错误: ' + e.message, 'error'); });
 }
 
+var editState = null;
+function enterEdit(addr, port, type) {
+  editState = {addr: addr, port: port, type: type};
+  document.getElementById('listenAddress').value = (addr && addr !== '0.0.0.0') ? addr : '';
+  document.getElementById('listenPort').value = port;
+  document.getElementById('ruleType').value = type;
+  var hint = document.getElementById('editHint');
+  hint.textContent = '编辑模式：修改后点击“添加”将更新 ' + addr + ':' + port + ' (' + type + ')';
+  hint.classList.add('show');
+  document.getElementById('listenPort').focus();
+}
+function cancelEdit() {
+  editState = null;
+  document.getElementById('editHint').classList.remove('show');
+  document.getElementById('listenAddress').value = '';
+  document.getElementById('listenPort').value = '';
+  document.getElementById('connectAddress').value = '';
+  document.getElementById('connectPort').value = '';
+  document.getElementById('ruleType').value = 'v4tov4';
+}
+function downloadExport() {
+  fetch('/api/export')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!data.ok) { showToast(data.error || '导出失败', 'error'); return; }
+      var blob = new Blob([JSON.stringify(data.rules, null, 2)], {type: 'application/json'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'portproxy-rules.json';
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+      showToast('已导出 ' + data.rules.length + ' 条规则', 'success');
+    })
+    .catch(function(e){ showToast('网络错误: ' + e.message, 'error'); });
+}
+function importFile(input) {
+  if (!input.files || !input.files[0]) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var rules;
+    try { rules = JSON.parse(ev.target.result); }
+    catch (e) { showToast('JSON 解析失败: ' + e.message, 'error'); return; }
+    fetch('/api/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rules: rules})
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if (data.ok) {
+          var msg = '已导入 ' + data.added + ' 条';
+          if (data.skipped) msg += '，跳过 ' + data.skipped + ' 条（重复或无效）';
+          showToast(msg, 'success'); loadRules();
+        } else { showToast(data.error || '导入失败', 'error'); }
+      })
+      .catch(function(e){ showToast('网络错误: ' + e.message, 'error'); });
+  };
+  reader.readAsText(input.files[0]);
+  input.value = '';
+}
+
 function showToast(msg, type) {
   var t = document.getElementById('toast');
   t.textContent = msg;
@@ -378,6 +455,8 @@ document.addEventListener('keydown', function(e) {
 });
 
 document.getElementById('rulesBody').addEventListener('click', function(e) {
+  var editBtn = e.target.closest ? e.target.closest('.btn-edit') : null;
+  if (editBtn) { enterEdit(editBtn.getAttribute('data-addr'), editBtn.getAttribute('data-port'), editBtn.getAttribute('data-type')); return; }
   var btn = e.target.closest ? e.target.closest('.btn-delete') : null;
   if (!btn) return;
   confirmDelete(btn.getAttribute('data-addr'), btn.getAttribute('data-port'), btn.getAttribute('data-type'));

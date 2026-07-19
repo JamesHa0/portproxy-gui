@@ -21,6 +21,61 @@ def is_admin():
 
 TYPES = ("v4tov4", "v4tov6", "v6tov4", "v6tov6")
 
+def netsh_adv(args):
+    """Run a netsh advfirewall command."""
+    try:
+        r = subprocess.run(["netsh", "advfirewall"] + args, capture_output=True)
+        return r.returncode, _decode(r.stdout), _decode(r.stderr)
+    except Exception as e:
+        return 1, "", str(e)
+
+def fw_open(port, name):
+    """Allow inbound TCP on a port. Best-effort."""
+    code, out, err = netsh_adv(["firewall", "add", "rule",
+        "name=" + name, "dir=in", "action=allow", "protocol=TCP",
+        "localport=" + str(port)])
+    return code == 0
+
+def fw_close(port, name):
+    """Delete the inbound firewall rule we created. Best-effort."""
+    code, out, err = netsh_adv(["firewall", "delete", "rule",
+        "name=" + name])
+    return code == 0
+
+def export_rules():
+    return list_rules()
+
+def import_rules(rules):
+    added, skipped = [], []
+    for r in rules:
+        rtype = str(r.get("type") or "v4tov4").strip().lower()
+        if rtype not in TYPES:
+            skipped.append(r); continue
+        la = str(r.get("listenAddress") or "").strip()
+        lp = str(r.get("listenPort") or "").strip()
+        ca = str(r.get("connectAddress") or "").strip()
+        cp = str(r.get("connectPort") or "").strip()
+        ok, _ = validate_port(lp)
+        if not ok:
+            skipped.append(r); continue
+        ok, _ = validate_ip(ca)
+        if not ok:
+            skipped.append(r); continue
+        la_norm = la if la else "0.0.0.0"
+        dup = False
+        for ex in export_rules():
+            exa = "0.0.0.0" if ex["listenAddress"] in ("", "*") else ex["listenAddress"]
+            if ex.get("type") == rtype and exa == la_norm and ex["listenPort"] == lp:
+                dup = True; break
+        if dup:
+            skipped.append(r); continue
+        try:
+            do_netsh("add", la, lp, ca, cp, rtype=rtype)
+            added.append(r)
+        except Exception:
+            skipped.append(r)
+    return added, skipped
+
 def relaunch_as_admin():
     """Request UAC elevation and relaunch this script. Returns True if launched."""
     try:
@@ -249,6 +304,7 @@ class Handler(BaseHTTPRequestHandler):
                 rtype = str(data.get("type") or "v4tov4").strip().lower()
                 if rtype not in TYPES:
                     return self._json({"ok": False, "error": "不支持的转发类型: " + rtype}, 400)
+                firewall = bool(data.get("firewall"))
                 la = str(data.get("listenAddress") or "").strip()
                 lp = str(data.get("listenPort") or "").strip()
                 ca = str(data.get("connectAddress") or "").strip()
@@ -273,18 +329,45 @@ class Handler(BaseHTTPRequestHandler):
                     existing = list_rules()
                     for r in existing:
                         ra = "0.0.0.0" if r["listenAddress"] in ("", "*") else r["listenAddress"]
-                        if r.get("type") == rtype and ra == la_norm and r["listenPort"] == lp:
+                        if r.get("type") == rtype and ra == la_norm and r["listenPort"] == lp and not (edit_type == rtype and ra == edit_la_norm and r["listenPort"] == edit_lp):
                             return self._json(
                                 {"ok": False, "error": "该规则已存在 ({}:{})".format(la_norm, lp),
                                  "duplicate": True}, 409)
                 except Exception:
                     pass
+                edit_type = str(data.get("editType") or "").strip().lower()
+                edit_lp = str(data.get("editListenPort") or "").strip()
+                edit_la = str(data.get("editListenAddress") or "").strip()
+                edit_la_norm = edit_la if edit_la else "0.0.0.0"
+                edit_lp = str(data.get("editListenPort") or "").strip()
+                if edit_type and edit_lp:
+                    try:
+                        do_netsh("delete", edit_la_norm, edit_lp, rtype=edit_type)
+                    except Exception:
+                        pass
                 try:
                     do_netsh("add", la, lp, ca, cp, rtype=rtype)
+                    if firewall:
+                        fw_open(lp, "PortProxy_%s_%s" % (rtype, lp))
                 except NetshError as e:
                     return self._json({"ok": False, "error": e.message,
                                        "needAdmin": e.need_admin}, 400)
                 self._json({"ok": True, "message": "rule added"})
+            elif self.path == "/api/export":
+                try:
+                    rules = export_rules()
+                    self._json({"ok": True, "rules": rules})
+                except Exception as e:
+                    self._json({"ok": False, "error": str(e)}, 400)
+            elif self.path == "/api/import":
+                rules = data.get("rules")
+                if not isinstance(rules, list):
+                    return self._json({"ok": False, "error": "无效的规则列表"}, 400)
+                try:
+                    added, skipped = import_rules(rules)
+                    self._json({"ok": True, "added": len(added), "skipped": len(skipped)})
+                except Exception as e:
+                    self._json({"ok": False, "error": str(e)}, 400)
             elif self.path == "/api/elevate":
                 ok = relaunch_as_admin()
                 if ok:
@@ -296,6 +379,7 @@ class Handler(BaseHTTPRequestHandler):
                 rtype = str(data.get("type") or "v4tov4").strip().lower()
                 if rtype not in TYPES:
                     return self._json({"ok": False, "error": "不支持的转发类型: " + rtype}, 400)
+                firewall = bool(data.get("firewall"))
                 la = str(data.get("listenAddress") or "").strip()
                 lp = str(data.get("listenPort") or "").strip()
                 ok, res = validate_port(lp)
