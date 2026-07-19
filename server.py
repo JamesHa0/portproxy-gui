@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PortProxy GUI - netsh portproxy graphical manager (web backend)"""
 
-import json, os, re, subprocess, threading, webbrowser, tempfile, ctypes
+import json, os, re, subprocess, threading, webbrowser, tempfile, ctypes, sys, time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 HOST = "127.0.0.1"
@@ -17,6 +17,23 @@ def is_admin():
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
         return None
+
+
+TYPES = ("v4tov4", "v4tov6", "v6tov4", "v6tov6")
+
+def relaunch_as_admin():
+    """Request UAC elevation and relaunch this script. Returns True if launched."""
+    try:
+        if getattr(sys, "frozen", False):
+            exe, params = sys.executable, ""
+        else:
+            exe = sys.executable
+            script = os.path.abspath(__file__)
+            params = '"%s"' % script if os.path.exists(script) else ""
+        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
+        return ret > 32
+    except Exception:
+        return False
 
 
 # ---- netsh helpers ----------------------------------------------------
@@ -69,24 +86,33 @@ def _netsh_shell(args):
 
 
 def list_rules():
-    code, out, err = netsh(["show", "v4tov4"])
-    if code != 0:
-        raise RuntimeError(_friendly_error((err or out).strip()))
-    pat = re.compile(r'(\d+\.\d+\.\d+\.\d+|\*)\s+(\d+)\s+(\d+\.\d+\.\d+\.\d+|\*)\s+(\d+)')
     rules = []
-    for line in out.splitlines():
-        m = pat.search(line)
-        if m:
+    pat = re.compile(r"([0-9a-fA-F.:*]+)\s+(\d+)\s+([0-9a-fA-F.:*]+)\s+(\d+)")
+    seen = set()
+    for rtype in TYPES:
+        code, out, err = netsh(["show", rtype])
+        if code != 0:
+            continue
+        for line in out.splitlines():
+            m = pat.search(line)
+            if not m:
+                continue
+            la, lp, ca, cp = m.group(1), m.group(2), m.group(3), m.group(4)
+            key = (rtype, la, lp)
+            if key in seen:
+                continue
+            seen.add(key)
             rules.append({
-                "listenAddress": m.group(1), "listenPort": m.group(2),
-                "connectAddress": m.group(3), "connectPort": m.group(4),
+                "type": rtype,
+                "listenAddress": la, "listenPort": lp,
+                "connectAddress": ca, "connectPort": cp,
                 "protocol": "tcp",
             })
     return rules
 
 
-def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port=""):
-    args = [op, "v4tov4", "listenport=" + str(listen_port or "")]
+def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port="", rtype="v4tov4"):
+    args = [op, rtype, "listenport=" + str(listen_port or "")]
     if op == "add":
         args.append("connectaddress=" + str(connect_addr or ""))
     if connect_port:
@@ -220,6 +246,9 @@ class Handler(BaseHTTPRequestHandler):
                             pass
                     return self._json({"ok": True, "message": "cleared", "count": count})
                 # add rule
+                rtype = str(data.get("type") or "v4tov4").strip().lower()
+                if rtype not in TYPES:
+                    return self._json({"ok": False, "error": "不支持的转发类型: " + rtype}, 400)
                 la = str(data.get("listenAddress") or "").strip()
                 lp = str(data.get("listenPort") or "").strip()
                 ca = str(data.get("connectAddress") or "").strip()
@@ -244,26 +273,36 @@ class Handler(BaseHTTPRequestHandler):
                     existing = list_rules()
                     for r in existing:
                         ra = "0.0.0.0" if r["listenAddress"] in ("", "*") else r["listenAddress"]
-                        if ra == la_norm and r["listenPort"] == lp:
+                        if r.get("type") == rtype and ra == la_norm and r["listenPort"] == lp:
                             return self._json(
                                 {"ok": False, "error": "该规则已存在 ({}:{})".format(la_norm, lp),
                                  "duplicate": True}, 409)
                 except Exception:
                     pass
                 try:
-                    do_netsh("add", la, lp, ca, cp)
+                    do_netsh("add", la, lp, ca, cp, rtype=rtype)
                 except NetshError as e:
                     return self._json({"ok": False, "error": e.message,
                                        "needAdmin": e.need_admin}, 400)
                 self._json({"ok": True, "message": "rule added"})
+            elif self.path == "/api/elevate":
+                ok = relaunch_as_admin()
+                if ok:
+                    self._json({"ok": True, "message": "elevating"})
+                    threading.Timer(1.0, lambda: os._exit(0)).start()
+                    return
+                self._json({"ok": False, "error": "无法请求提权，请手动以管理员身份运行"}, 400)
             elif self.path == "/api/rules/delete":
+                rtype = str(data.get("type") or "v4tov4").strip().lower()
+                if rtype not in TYPES:
+                    return self._json({"ok": False, "error": "不支持的转发类型: " + rtype}, 400)
                 la = str(data.get("listenAddress") or "").strip()
                 lp = str(data.get("listenPort") or "").strip()
                 ok, res = validate_port(lp)
                 if not ok:
                     return self._json({"ok": False, "error": res}, 400)
                 try:
-                    do_netsh("delete", la, lp)
+                    do_netsh("delete", la, lp, rtype=rtype)
                 except NetshError as e:
                     return self._json({"ok": False, "error": e.message,
                                        "needAdmin": e.need_admin}, 400)
@@ -278,7 +317,22 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    server = HTTPServer((HOST, PORT), Handler)
+    if os.environ.get("PP_NO_ELEVATE") != "1" and not is_admin():
+        try:
+            if relaunch_as_admin():
+                sys.exit(0)
+        except Exception:
+            pass
+    server = None
+    for _ in range(20):
+        try:
+            server = HTTPServer((HOST, PORT), Handler)
+            break
+        except OSError:
+            time.sleep(0.4)
+    if server is None:
+        print("无法绑定端口 %s:%d，请确认未被占用" % (HOST, PORT))
+        sys.exit(1)
     admin = is_admin()
     print("=" * 50)
     print("  PortProxy GUI - http://{}:{}".format(HOST, PORT))

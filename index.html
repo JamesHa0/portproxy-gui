@@ -37,14 +37,19 @@ body {
 .header .subtitle { font-size: 13px; color: var(--text-secondary); }
 .btn-refresh { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 16px; font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all .15s; white-space: nowrap; }
 .btn-refresh:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.btn-elevate { background: var(--primary); border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background .15s; white-space: nowrap; }
+.btn-elevate:hover { background: var(--primary-hover); }
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; margin-bottom: 20px; }
 .card-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
 .card-title .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto auto; gap: 12px; align-items: end; }
 .form-group label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 5px; }
 .form-group input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; color: var(--text); background: var(--card); transition: border-color .15s, box-shadow .15s; }
 .form-group input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
 .form-group input::placeholder { color: var(--text-light); }
+.form-group select { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text); background: var(--card); transition: border-color .15s, box-shadow .15s; cursor: pointer; }
+.form-group select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.type-tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569; font-family: -apple-system, sans-serif; }
 .btn-add { background: var(--primary); color: white; border: none; border-radius: 8px; padding: 9px 22px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; height: 38px; }
 .btn-add:hover { background: var(--primary-hover); }
 .btn-add:active { transform: translateY(1px); }
@@ -117,6 +122,7 @@ tbody tr:hover { background: #f8fafc; }
       </div>
     </div>
     <button class="btn-refresh" onclick="loadRules()">&#8635; 刷新</button>
+    <button class="btn-elevate" id="btnElevate" onclick="elevate()" style="display:none">&#9889; 以管理员身份重启</button>
   </div>
 
   <div class="card">
@@ -138,9 +144,18 @@ tbody tr:hover { background: #f8fafc; }
         <label>目标端口</label>
         <input type="number" id="connectPort" placeholder="80">
       </div>
+      <div class="form-group">
+        <label>类型</label>
+        <select id="ruleType">
+          <option value="v4tov4">v4tov4</option>
+          <option value="v4tov6">v4tov6</option>
+          <option value="v6tov4">v6tov4</option>
+          <option value="v6tov6">v6tov6</option>
+        </select>
+      </div>
       <button class="btn-add" onclick="addRule()">+ 添加</button>
     </div>
-    <p class="form-note">仅支持 <strong>TCP</strong> 协议（netsh interface portproxy 限制），监听地址留空默认为 0.0.0.0。</p>
+    <p class="form-note">仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。</p>
   </div>
 
   <div class="card">
@@ -194,10 +209,12 @@ function updateAdmin(isAdmin) {
   var badge = document.getElementById('adminBadge');
   var banner = document.getElementById('adminBanner');
   if (isAdmin === true) {
+    document.getElementById('btnElevate').style.display = 'none';
     badge.className = 'admin-badge ok';
     badge.innerHTML = '<span class="dot"></span>管理员';
     banner.style.display = 'none';
   } else if (isAdmin === false) {
+    document.getElementById('btnElevate').style.display = 'inline-flex';
     badge.className = 'admin-badge no';
     badge.innerHTML = '<span class="dot"></span>需管理员';
     banner.style.display = 'flex';
@@ -218,10 +235,10 @@ function renderRules(rules) {
   }
   count.innerHTML = '共 <strong>' + rules.length + '</strong> 条规则';
   btnClear.style.display = 'inline-block';
-  var html = '<table><thead><tr><th>监听地址</th><th>监听端口</th><th></th><th>目标地址</th><th>目标端口</th><th>协议</th><th>操作</th></tr></thead><tbody>';
+  var html = '<table><thead><tr><th>监听地址</th><th>监听端口</th><th></th><th>目标地址</th><th>目标端口</th><th>协议</th><th>类型</th><th>操作</th></tr></thead><tbody>';
   for (var i = 0; i < rules.length; i++) {
     var r = rules[i];
-    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '">删除</button></td></tr>';
+    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type||'v4tov4').toLowerCase()) + '</span></td><td><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">删除</button></td></tr>';
   }
   html += '</tbody></table>';
   body.innerHTML = html;
@@ -263,7 +280,7 @@ function addRule() {
   fetch('/api/rules', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp})
+    body: JSON.stringify({listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp, type: document.getElementById('ruleType').value})
   })
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -273,8 +290,8 @@ function addRule() {
     .catch(function(e) { showToast('网络错误: ' + e.message, 'error'); });
 }
 
-function confirmDelete(addr, port) {
-  pendingDelete = {addr: addr, port: port};
+function confirmDelete(addr, port, type) {
+  pendingDelete = {addr: addr, port: port, type: type};
   pendingClearAll = false;
   document.getElementById('modalTitle').textContent = '确认删除';
   document.getElementById('modalText').innerHTML = '确定要删除 <code>' + esc(addr) + ':' + esc(port) + '</code> 这条转发规则吗？';
@@ -303,7 +320,7 @@ document.getElementById('modalConfirm').addEventListener('click', function() {
     fetch('/api/rules/delete', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({listenAddress: pendingDelete.addr, listenPort: pendingDelete.port})
+      body: JSON.stringify({listenAddress: pendingDelete.addr, listenPort: pendingDelete.port, type: pendingDelete.type})
     })
       .then(function(r) { return r.json(); })
       .then(function(data) {
@@ -327,6 +344,16 @@ document.getElementById('modalConfirm').addEventListener('click', function() {
     pendingClearAll = false;
   }
 });
+
+function elevate() {
+  fetch('/api/elevate', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.ok) { showToast('正在以管理员身份重启...', 'success'); setTimeout(function(){ location.reload(); }, 1200); }
+      else { showToast(d.error || '提权失败', 'error'); }
+    })
+    .catch(function(e){ showToast('网络错误: ' + e.message, 'error'); });
+}
 
 function showToast(msg, type) {
   var t = document.getElementById('toast');
@@ -353,7 +380,7 @@ document.addEventListener('keydown', function(e) {
 document.getElementById('rulesBody').addEventListener('click', function(e) {
   var btn = e.target.closest ? e.target.closest('.btn-delete') : null;
   if (!btn) return;
-  confirmDelete(btn.getAttribute('data-addr'), btn.getAttribute('data-port'));
+  confirmDelete(btn.getAttribute('data-addr'), btn.getAttribute('data-port'), btn.getAttribute('data-type'));
 });
 
 loadRules();

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PortProxy GUI - netsh portproxy desktop manager (tkinter)"""
 
-import os, re, subprocess, tempfile, tkinter as tk
+import os, re, subprocess, tempfile, tkinter as tk, ctypes, sys
 from tkinter import ttk, messagebox
 
 # ── netsh logic ──────────────────────────────────────
@@ -53,23 +53,32 @@ def _netsh_shell(args):
 
 
 def list_rules():
-    code, out, err = netsh(["show", "v4tov4"])
-    if code != 0:
-        raise RuntimeError((err or out).strip() or "netsh error")
-    pat = re.compile(r"(\d+\.\d+\.\d+\.\d+|\*)\s+(\d+)\s+(\d+\.\d+\.\d+\.\d+|\*)\s+(\d+)")
     rules = []
-    for line in out.splitlines():
-        m = pat.search(line)
-        if m:
+    pat = re.compile(r"([0-9a-fA-F.:*]+)\s+(\d+)\s+([0-9a-fA-F.:*]+)\s+(\d+)")
+    seen = set()
+    for rtype in TYPES:
+        code, out, err = netsh(["show", rtype])
+        if code != 0:
+            continue
+        for line in out.splitlines():
+            m = pat.search(line)
+            if not m:
+                continue
+            la, lp, ca, cp = m.group(1), m.group(2), m.group(3), m.group(4)
+            key = (rtype, la, lp)
+            if key in seen:
+                continue
+            seen.add(key)
             rules.append({
-                "listenAddress": m.group(1), "listenPort": m.group(2),
-                "connectAddress": m.group(3), "connectPort": m.group(4),
+                "type": rtype,
+                "listenAddress": la, "listenPort": lp,
+                "connectAddress": ca, "connectPort": cp,
             })
     return rules
 
 
-def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port=""):
-    args = [op, "v4tov4", "listenport=" + str(listen_port or "")]
+def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port="", rtype="v4tov4"):
+    args = [op, rtype, "listenport=" + str(listen_port or "")]
     if op == "add":
         args.append("connectaddress=" + str(connect_addr or ""))
     if connect_port:
@@ -83,6 +92,29 @@ def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port=""):
 
 
 # ── validation helpers ───────────────────────────────
+
+TYPES = ("v4tov4", "v4tov6", "v6tov4", "v6tov6")
+
+def is_admin():
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return None
+
+def relaunch_as_admin():
+    """Request UAC elevation and relaunch this script. Returns True if launched."""
+    try:
+        if getattr(sys, "frozen", False):
+            exe, params = sys.executable, ""
+        else:
+            exe = sys.executable
+            script = os.path.abspath(__file__)
+            params = '"%s"' % script if os.path.exists(script) else ""
+        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
+        return ret > 32
+    except Exception:
+        return False
+
 
 def validate_port(port_str):
     """Validate port number. Returns (True, port_int) or (False, error_msg)."""
@@ -171,6 +203,7 @@ class PortProxyApp:
         self._build_statusbar()
         self._bind_keys()
         self.refresh_rules()
+        self.check_admin()
 
     def _setup_styles(self):
         style = ttk.Style()
@@ -248,6 +281,15 @@ class PortProxyApp:
             cursor="hand2", padx=14, pady=4)
         refresh_btn.pack(side="right")
 
+        self.admin_label = tk.Label(inner, text="", bg=CLR_HEADER_BG, fg="#94a3b8", font=FONT_UI)
+        self.admin_label.pack(side="right", padx=(0, 12))
+        self.elevate_btn = tk.Button(inner, text="以管理员身份重启", command=self.elevate,
+            bg=CLR_PRIMARY, fg="#ffffff", font=("Microsoft YaHei UI", 9, "bold"),
+            bd=0, activebackground=CLR_PRIMARY_H, activeforeground="#ffffff",
+            cursor="hand2", padx=12, pady=5)
+        self.elevate_btn.pack(side="right", padx=(0, 12))
+        self.elevate_btn.pack_forget()
+
     def _build_body(self):
         body = tk.Frame(self.root, bg=CLR_BG)
         body.pack(fill="both", expand=True, padx=20, pady=(16, 0))
@@ -275,12 +317,17 @@ class PortProxyApp:
         tk.Label(form, text=":", bg=CLR_CARD, fg=CLR_TEXT_SEC,
                  font=("Segoe UI", 14, "bold")).grid(row=0, column=7, padx=(6, 6))
         self.connect_port = self._entry(form, 0, 8, 8, "80")
+        tk.Label(form, text="类型", bg=CLR_CARD, fg=CLR_TEXT_SEC, font=FONT_SMALL).grid(row=0, column=9, padx=(16, 4))
+        self.rule_type = tk.StringVar(value="v4tov4")
+        type_combo = ttk.Combobox(form, textvariable=self.rule_type, state="readonly",
+            values=list(TYPES), width=9, font=FONT_UI)
+        type_combo.grid(row=0, column=10, padx=(0, 8))
         add_btn = tk.Button(form, text="+ 添加规则", command=self.add_rule,
             bg=CLR_PRIMARY, fg="#ffffff", font=("Microsoft YaHei UI", 10, "bold"),
             bd=0, activebackground=CLR_PRIMARY_H, activeforeground="#ffffff",
             cursor="hand2", padx=20, pady=7)
-        add_btn.grid(row=0, column=9, padx=(20, 0))
-        tk.Label(add_card, text="提示：添加/删除规则需要管理员权限运行",
+        add_btn.grid(row=0, column=11, padx=(8, 0))
+        tk.Label(add_card, text="提示：支持 v4tov4/v4tov6/v6tov4/v6tov6 四种类型；添加/删除需管理员权限",
                  bg=CLR_CARD, fg=CLR_TEXT_SEC, font=FONT_SMALL).pack(
                      anchor="w", padx=20, pady=(0, 12))
 
@@ -302,7 +349,7 @@ class PortProxyApp:
         clear_btn.pack(side="right")
         tree_frame = tk.Frame(table_card, bg=CLR_CARD)
         tree_frame.pack(fill="both", expand=True, padx=20, pady=(0, 16))
-        cols = ("listenAddr", "listenPort", "connectAddr", "connectPort", "protocol")
+        cols = ("listenAddr", "listenPort", "connectAddr", "connectPort", "protocol", "type")
         self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings",
                                   selectmode="browse", height=10)
         self.tree.heading("listenAddr", text="  监听地址")
@@ -310,11 +357,13 @@ class PortProxyApp:
         self.tree.heading("connectAddr", text="  目标地址")
         self.tree.heading("connectPort", text="目标端口")
         self.tree.heading("protocol", text="协议")
+        self.tree.heading("type", text="类型")
         self.tree.column("listenAddr", width=180, anchor="w")
         self.tree.column("listenPort", width=100, anchor="center")
         self.tree.column("connectAddr", width=180, anchor="w")
         self.tree.column("connectPort", width=100, anchor="center")
         self.tree.column("protocol", width=70, anchor="center")
+        self.tree.column("type", width=80, anchor="center")
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -386,7 +435,7 @@ class PortProxyApp:
                 self.tree.insert("", "end", values=(
                     "  " + r["listenAddress"], r["listenPort"],
                     "  " + r["connectAddress"], r["connectPort"],
-                    "TCP"
+                    "TCP", r.get("type", "v4tov4")
                 ), tags=(tag,))
             count = len(rules)
             self.rule_count_label.config(text="({})".format(count) if count else "")
@@ -399,6 +448,7 @@ class PortProxyApp:
         lp = self.listen_port.get().strip()
         ca = self.connect_addr.get().strip()
         cp = self.connect_port.get().strip()
+        rtype = self.rule_type.get().strip()
 
         # Validate listen port
         ok, result = validate_port(lp)
@@ -436,7 +486,7 @@ class PortProxyApp:
         try:
             existing = list_rules()
             for r in existing:
-                if r["listenPort"] == lp and (r["listenAddress"] == la or la == "0.0.0.0" or r["listenAddress"] == "0.0.0.0"):
+                if r.get("type") == rtype and r["listenPort"] == lp and (r["listenAddress"] == la or la == "0.0.0.0" or r["listenAddress"] == "0.0.0.0"):
                     if not messagebox.askyesno("规则可能重复",
                             "已存在监听端口 {} 的规则 ({} -> {})\n确定要继续添加吗？".format(
                                 lp, r["listenAddress"], r["connectAddress"]),
@@ -447,7 +497,7 @@ class PortProxyApp:
 
         self._set_status("正在添加规则...")
         try:
-            do_netsh("add", la, lp, ca, cp)
+            do_netsh("add", la, lp, ca, cp, rtype=rtype)
             self._set_status("规则添加成功", "ok")
             self.listen_port.delete(0, "end")
             self.connect_addr.delete(0, "end")
@@ -464,12 +514,13 @@ class PortProxyApp:
             return
         values = self.tree.item(sel[0])["values"]
         addr, port = values[0].strip(), values[1]
+        rtype = values[5] if len(values) > 5 else "v4tov4"
         if not messagebox.askyesno("确认删除",
                 "确定要删除规则 {}:{} 吗？".format(addr, port), parent=self.root):
             return
         self._set_status("正在删除规则...")
         try:
-            do_netsh("delete", addr, port)
+            do_netsh("delete", addr, port, rtype=rtype)
             self._set_status("规则删除成功", "ok")
             self.refresh_rules()
         except Exception as e:
@@ -482,7 +533,11 @@ class PortProxyApp:
             return
         self._set_status("正在清空所有规则...")
         try:
-            do_netsh("delete", "", "")
+            for _t in TYPES:
+                try:
+                    do_netsh("delete", "", "", rtype=_t)
+                except Exception:
+                    pass
             self._set_status("已清空所有规则", "ok")
             self.refresh_rules()
         except Exception as e:
@@ -495,6 +550,21 @@ class PortProxyApp:
             self.tree.selection_set(sel)
             self.tree_menu.post(event.x_root, event.y_root)
 
+    def check_admin(self):
+        admin = is_admin()
+        if admin:
+            self.admin_label.config(text="● 管理员权限", fg="#86efac")
+            self.elevate_btn.pack_forget()
+        else:
+            self.admin_label.config(text="● 非管理员", fg="#fca5a5")
+            self.elevate_btn.pack(side="right", padx=(0, 12))
+
+    def elevate(self):
+        if relaunch_as_admin():
+            self.root.destroy()
+            sys.exit(0)
+        messagebox.showwarning("提权失败", "无法请求管理员权限。\n请右键本程序选择“以管理员身份运行”。", parent=self.root)
+
     def show_about(self):
         messagebox.showinfo("关于 PortProxy",
             "端口转发管理器 v1.0\n\n"
@@ -506,6 +576,12 @@ class PortProxyApp:
 # ── Main ─────────────────────────────────────────────
 
 def main():
+    if os.environ.get("PP_NO_ELEVATE") != "1" and not is_admin():
+        try:
+            if relaunch_as_admin():
+                sys.exit(0)
+        except Exception:
+            pass
     root = tk.Tk()
     app = PortProxyApp(root)
     root.mainloop()

@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['D:\\Homework\\ai\\portproxy-gui\\portproxy_gui.pyw'],
+    ['portproxy_gui.pyw'],
     pathex=[],
     binaries=[],
     datas=[],
