@@ -95,6 +95,74 @@ def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port="", rty
 
 TYPES = ("v4tov4", "v4tov6", "v6tov4", "v6tov6")
 
+# ---- system tray constants (ctypes Shell_NotifyIcon) ----
+try:
+    user32 = ctypes.windll.user32
+    shell32 = ctypes.windll.shell32
+except Exception:
+    user32 = None
+    shell32 = None
+
+NIF_ICON = 0x00000002
+NIF_MESSAGE = 0x00000001
+NIF_TIP = 0x00000004
+NIM_ADD = 0x00000000
+NIM_DELETE = 0x00000001
+NIM_MODIFY = 0x00000002
+WM_TRAY_MSG = 0x0400 + 1001
+WM_LBUTTONUP = 0x0202
+WM_RBUTTONUP = 0x0205
+GWL_WNDPROC = -4
+
+class NOTIFYICONDATA(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.c_ulong),
+        ("hWnd", ctypes.c_void_p),
+        ("uID", ctypes.c_uint),
+        ("uFlags", ctypes.c_uint),
+        ("uCallbackMessage", ctypes.c_uint),
+        ("hIcon", ctypes.c_void_p),
+        ("szTip", ctypes.c_wchar * 128),
+    ]
+
+# ---- startup persistence (registry Run key, zero-dependency) ----
+import winreg
+
+APP_NAME = "PortProxyGUI"
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+def _self_path():
+    """Executable path: frozen EXE when bundled, else this script."""
+    if getattr(sys, "frozen", False):
+        return '"' + sys.executable + '"'
+    return '"' + os.path.abspath(__file__) + '"'
+
+def startup_enabled():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            try:
+                winreg.QueryValueEx(k, APP_NAME)
+                return True
+            except FileNotFoundError:
+                return False
+    except Exception:
+        return False
+
+def set_startup(enable):
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                             winreg.KEY_SET_VALUE) as k:
+            if enable:
+                winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, _self_path())
+            else:
+                try:
+                    winreg.DeleteValue(k, APP_NAME)
+                except FileNotFoundError:
+                    pass
+        return True
+    except Exception:
+        return False
+
 def netsh_adv(args):
     """Run a netsh advfirewall command."""
     try:
@@ -159,6 +227,10 @@ def relaunch_as_admin():
         if getattr(sys, "frozen", False):
             exe, params = sys.executable, ""
         else:
+            try:
+                self.startup_var.set(startup_enabled())
+            except Exception:
+                pass
             exe = sys.executable
             script = os.path.abspath(__file__)
             params = '"%s"' % script if os.path.exists(script) else ""
@@ -256,6 +328,8 @@ class PortProxyApp:
         self._bind_keys()
         self.refresh_rules()
         self.check_admin()
+        self._init_tray()
+        self._init_startup_toggle()
 
     def _setup_styles(self):
         style = ttk.Style()
@@ -308,6 +382,14 @@ class PortProxyApp:
         help_menu = tk.Menu(menubar, tearoff=0, font=FONT_UI)
         help_menu.add_command(label="关于", command=self.show_about)
         menubar.add_cascade(label="帮助", menu=help_menu)
+        settings_menu = tk.Menu(menubar, tearoff=0, font=FONT_UI)
+        self.startup_var = tk.BooleanVar(value=False)
+        settings_menu.add_checkbutton(label="开机自启", variable=self.startup_var,
+            command=self.toggle_startup, font=FONT_UI)
+        settings_menu.add_command(label="隐入托盘", command=self.hide_to_tray)
+        settings_menu.add_separator()
+        settings_menu.add_command(label="关于本程序", command=self.show_about)
+        menubar.add_cascade(label="设置", menu=settings_menu)
         self.root.config(menu=menubar)
 
     def _build_header(self):
@@ -486,6 +568,7 @@ class PortProxyApp:
         self.status.pack(side="bottom", fill="x")
 
     def _bind_keys(self):
+        self.root.protocol("WM_DELETE_WINDOW", self.close_to_tray)
         self.root.bind("<F5>", lambda e: self.refresh_rules())
         self.root.bind("<Control-r>", lambda e: self.refresh_rules())
         self.root.bind("<Return>", lambda e: self.add_rule())
@@ -722,8 +805,123 @@ class PortProxyApp:
         messagebox.showinfo("关于 PortProxy",
             "端口转发管理器 v1.0\n\n"
             "基于 Windows netsh interface portproxy\n"
-            "管理员权限运行可添加/删除规则",
+            "管理员权限运行可添加/删除规则\n"
+            "支持系统托盘与开机自启",
             parent=self.root)
+
+    # ── system tray (ctypes Shell_NotifyIcon, no dependencies) ──
+    def _init_tray(self):
+        self.tray_icon = None
+        self._minimize_to_tray = True
+        self.root.bind("<Unmap>", self._on_unmap)
+
+    def _build_tray_icon(self):
+        if self.tray_icon is not None:
+            return
+        nid = NOTIFYICONDATA()
+        nid.cbSize = ctypes.sizeof(NOTIFYICONDATA)
+        nid.hWnd = self.root.winfo_id()
+        nid.uID = 1
+        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP
+        nid.uCallbackMessage = WM_TRAY_MSG
+        try:
+            nid.hIcon = ctypes.windll.user32.SendMessageW(self.root.winfo_id(), 0x007F, 2, 0)
+        except Exception:
+            nid.hIcon = 0
+        if not nid.hIcon:
+            nid.hIcon = ctypes.windll.user32.LoadIconW(0, 32512)
+        nid.szTip = "PortProxy 端口转发管理器"
+        ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+        self.tray_icon = nid
+
+    def _remove_tray_icon(self):
+        if self.tray_icon is None:
+            return
+        ctypes.windll.shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self.tray_icon))
+        self.tray_icon = None
+
+    def _on_unmap(self, event=None):
+        if getattr(self, "_minimize_to_tray", True):
+            self._build_tray_icon()
+            if self.tray_icon is not None:
+                self.root.withdraw()
+
+    def hide_to_tray(self):
+        self._build_tray_icon()
+        if self.tray_icon is not None:
+            self.root.withdraw()
+
+    def show_from_tray(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.update_idletasks()
+
+    def toggle_tray(self):
+        if self.root.winfo_viewable():
+            self.hide_to_tray()
+        else:
+            self.show_from_tray()
+
+    def _install_tray_wndproc(self):
+        if getattr(self, "_wnd_subclassed", False):
+            return
+        self._wnd_subclassed = True
+        old = ctypes.windll.user32.GetWindowLongPtrW(self.root.winfo_id(), GWL_WNDPROC)
+        self._old_wndproc = old
+        def wnd_proc(hwnd, msg, wparam, lparam):
+            if msg == WM_TRAY_MSG:
+                if lparam == WM_LBUTTONUP or lparam == WM_RBUTTONUP:
+                    self.root.after(0, self._tray_menu)
+                return 0
+            return ctypes.windll.user32.CallWindowProcW(self._old_wndproc, hwnd, msg, wparam, lparam)
+        self._wndproc_cb = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p)(wnd_proc)
+        ctypes.windll.user32.SetWindowLongPtrW(self.root.winfo_id(), GWL_WNDPROC, self._wndproc_cb)
+
+    def _tray_menu(self):
+        if not hasattr(self, "_tray_menu_w"):
+            m = tk.Menu(self.root, tearoff=0, font=FONT_UI)
+            m.add_command(label="显示", command=self.show_from_tray)
+            m.add_command(label="刷新", command=self.refresh_rules)
+            m.add_separator()
+            m.add_command(label="退出", command=self.quit_app)
+            self._tray_menu_w = m
+        try:
+            self._tray_menu_w.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        except Exception:
+            pass
+
+    def close_to_tray(self):
+        if self.root.winfo_viewable():
+            self.hide_to_tray()
+        else:
+            self.quit_app()
+
+    def quit_app(self):
+        try:
+            self._remove_tray_icon()
+        except Exception:
+            pass
+        self.root.destroy()
+        sys.exit(0)
+
+    # ── startup persistence ──
+    def _init_startup_toggle(self):
+        try:
+            self.startup_var.set(startup_enabled())
+        except Exception:
+            pass
+
+    def toggle_startup(self):
+        try:
+            enable = self.startup_var.get()
+            if set_startup(enable):
+                self._set_status("已" + ("开启" if enable else "关闭") + "开机自启", "ok")
+            else:
+                self.startup_var.set(not enable)
+                messagebox.showerror("错误", "无法写入注册表，请检查权限或以管理员身份运行。", parent=self.root)
+        except Exception as e:
+            self.startup_var.set(not self.startup_var.get())
+            messagebox.showerror("错误", "操作失败:\n{}".format(str(e)), parent=self.root)
 
 
 # ── Main ─────────────────────────────────────────────
@@ -737,6 +935,7 @@ def main():
             pass
     root = tk.Tk()
     app = PortProxyApp(root)
+    app._install_tray_wndproc()
     root.mainloop()
 
 
