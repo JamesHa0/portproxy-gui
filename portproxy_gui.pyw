@@ -114,6 +114,25 @@ WM_LBUTTONUP = 0x0202
 WM_RBUTTONUP = 0x0205
 GWL_WNDPROC = -4
 
+# Correct 64-bit prototypes for window-proc subclassing (avoids access violations).
+try:
+    LONG_PTR = ctypes.c_int64
+except Exception:
+    LONG_PTR = ctypes.c_long
+
+def _proto(name, restype, argtypes):
+    try:
+        fn = getattr(user32, name)
+        fn.restype = restype
+        fn.argtypes = argtypes
+    except Exception:
+        pass
+
+if user32 is not None:
+    _proto("GetWindowLongPtrW", ctypes.c_void_p, [ctypes.c_void_p, ctypes.c_int])
+    _proto("SetWindowLongPtrW", ctypes.c_void_p, [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p])
+    _proto("CallWindowProcW", ctypes.c_void_p, [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p])
+
 class NOTIFYICONDATA(ctypes.Structure):
     _fields_ = [
         ("cbSize", ctypes.c_ulong),
@@ -866,16 +885,19 @@ class PortProxyApp:
         if getattr(self, "_wnd_subclassed", False):
             return
         self._wnd_subclassed = True
-        old = ctypes.windll.user32.GetWindowLongPtrW(self.root.winfo_id(), GWL_WNDPROC)
+        hwnd = self.root.winfo_id()
+        old = ctypes.windll.user32.GetWindowLongPtrW(hwnd, GWL_WNDPROC)
         self._old_wndproc = old
-        def wnd_proc(hwnd, msg, wparam, lparam):
+        def wnd_proc(hwnd_, msg, wparam, lparam):
             if msg == WM_TRAY_MSG:
                 if lparam == WM_LBUTTONUP or lparam == WM_RBUTTONUP:
                     self.root.after(0, self._tray_menu)
                 return 0
-            return ctypes.windll.user32.CallWindowProcW(self._old_wndproc, hwnd, msg, wparam, lparam)
-        self._wndproc_cb = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p)(wnd_proc)
-        ctypes.windll.user32.SetWindowLongPtrW(self.root.winfo_id(), GWL_WNDPROC, self._wndproc_cb)
+            result = ctypes.windll.user32.CallWindowProcW(self._old_wndproc, hwnd_, msg, wparam, lparam)
+            return int(result) if result is not None else 0
+        # Return type must be pointer-sized (LONG_PTR), not 32-bit c_long.
+        self._wndproc_cb = ctypes.WINFUNCTYPE(LONG_PTR, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p)(wnd_proc)
+        ctypes.windll.user32.SetWindowLongPtrW(hwnd, GWL_WNDPROC, self._wndproc_cb)
 
     def _tray_menu(self):
         if not hasattr(self, "_tray_menu_w"):
