@@ -500,7 +500,7 @@ class PortProxyApp:
         exp_btn.pack(side="right", padx=(0, 8))
         tree_frame = tk.Frame(table_card, bg=CLR_CARD)
         tree_frame.pack(fill="both", expand=True, padx=20, pady=(0, 16))
-        cols = ("listenAddr", "listenPort", "connectAddr", "connectPort", "protocol", "type")
+        cols = ("listenAddr", "listenPort", "connectAddr", "connectPort", "protocol", "type", "actions")
         self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings",
                                   selectmode="browse", height=10)
         self.tree.heading("listenAddr", text="  监听地址")
@@ -591,7 +591,7 @@ class PortProxyApp:
                     "  " + r["listenAddress"], r["listenPort"],
                     "  " + r["connectAddress"], r["connectPort"],
                     "TCP", r.get("type", "v4tov4"),
-                    r["listenPort"]
+                    "右键编辑 / 删除"
                 ), tags=(tag,))
             count = len(rules)
             self.rule_count_label.config(text="({})".format(count) if count else "")
