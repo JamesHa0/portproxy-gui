@@ -290,15 +290,15 @@ function addRule() {
   if (cp && !isValidPort(cp)) { showToast('目标端口必须为 1-65535 的数字', 'error'); return; }
   if (la && !isValidAddr(la)) { showToast('监听地址格式错误 (应为 IP 或主机名)', 'error'); return; }
 
-  fetch('/api/rules', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    var fw = document.getElementById('fwAllow').checked;
+  var fw = document.getElementById('fwAllow').checked;
     var payload = {listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp, type: document.getElementById('ruleType').value, firewall: fw};
     if (editState) { payload.editType = editState.type; payload.editListenPort = editState.listenPort; }
-    body: JSON.stringify(payload)
-  })
-    .then(function(r) { return r.json(); })
+    fetch('/api/rules', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    })
+      .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.ok) { showToast('规则添加成功', 'success'); cancelEdit(); loadRules(); }
       else { showToast(data.error || '添加失败', 'error'); if (data.needAdmin) updateAdmin(false); }
