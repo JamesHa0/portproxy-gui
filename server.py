@@ -323,6 +323,11 @@ class Handler(BaseHTTPRequestHandler):
                     ok, res = validate_ip(la)
                     if not ok:
                         return self._json({"ok": False, "error": "监听" + res}, 400)
+                # parse edit state first (needed for duplicate check)
+                edit_type = str(data.get("editType") or "").strip().lower()
+                edit_lp = str(data.get("editListenPort") or "").strip()
+                edit_la = str(data.get("editListenAddress") or "").strip()
+                edit_la_norm = edit_la if edit_la else "0.0.0.0"
                 # duplicate check
                 la_norm = la if la else "0.0.0.0"
                 try:
@@ -335,11 +340,6 @@ class Handler(BaseHTTPRequestHandler):
                                  "duplicate": True}, 409)
                 except Exception:
                     pass
-                edit_type = str(data.get("editType") or "").strip().lower()
-                edit_lp = str(data.get("editListenPort") or "").strip()
-                edit_la = str(data.get("editListenAddress") or "").strip()
-                edit_la_norm = edit_la if edit_la else "0.0.0.0"
-                edit_lp = str(data.get("editListenPort") or "").strip()
                 if edit_type and edit_lp:
                     try:
                         do_netsh("delete", edit_la_norm, edit_lp, rtype=edit_type)
