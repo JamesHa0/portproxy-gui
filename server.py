@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """PortProxy GUI - netsh portproxy graphical manager (web backend)"""
 
-import json, os, re, subprocess, threading, webbrowser, tempfile, ctypes, sys, time
+import json, os, re, subprocess, threading, webbrowser, tempfile, ctypes, sys, time, csv, io
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 HOST = "127.0.0.1"
@@ -21,12 +22,86 @@ def is_admin():
 
 TYPES = ("v4tov4", "v4tov6", "v6tov4", "v6tov6")
 
+# ---- command log -------------------------------------------------------
+CMD_LOG = []
+CMD_LOG_MAX = 200
+
+def _log_cmd(cmd_str, returncode, stdout, stderr):
+    """Append a command execution record to CMD_LOG."""
+    entry = {
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "cmd": cmd_str,
+        "returncode": returncode,
+        "stdout": (stdout or "").strip(),
+        "stderr": (stderr or "").strip(),
+    }
+    CMD_LOG.append(entry)
+    if len(CMD_LOG) > CMD_LOG_MAX:
+        del CMD_LOG[:len(CMD_LOG) - CMD_LOG_MAX]
+
+# ---- CSV parsing -------------------------------------------------------
+
+CSV_HEADER = ["type", "listenaddress", "listenport", "connectaddress", "connectport"]
+
+def parse_csv(text):
+    """Parse CSV text into a list of rule dicts. Returns (rules, errors)."""
+    rules = []
+    errors = []
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return rules, ["CSV 内容为空"]
+    # validate header
+    header = [h.strip().lower() for h in rows[0]]
+    if header != CSV_HEADER:
+        return rules, ["CSV 表头格式错误，应为: type,listenAddress,listenPort,connectAddress,connectPort"]
+    for i, row in enumerate(rows[1:], start=2):
+        if not row or all(c.strip() == "" for c in row):
+            continue
+        if len(row) < 5:
+            errors.append("第{}行: 字段数不足".format(i))
+            continue
+        rules.append({
+            "type": row[0].strip(),
+            "listenAddress": row[1].strip(),
+            "listenPort": row[2].strip(),
+            "connectAddress": row[3].strip(),
+            "connectPort": row[4].strip(),
+        })
+    return rules, errors
+
+# ---- WSL detection -----------------------------------------------------
+
+def detect_wsl():
+    """Detect WSL2 and return its IP. Returns dict with available/wsl_ip/host_ip."""
+    result = {"available": False, "wsl_ip": "", "host_ip": ""}
+    try:
+        r = subprocess.run(["wsl", "hostname", "-I"], capture_output=True, timeout=5)
+        if r.returncode == 0:
+            out = _decode(r.stdout).strip()
+            ips = out.split()
+            if ips:
+                wsl_ip = ips[0]
+                result["available"] = True
+                result["wsl_ip"] = wsl_ip
+                # guess host IP (typically .1 on same subnet)
+                parts = wsl_ip.rsplit(".", 1)
+                if len(parts) == 2:
+                    result["host_ip"] = parts[0] + ".1"
+    except Exception:
+        pass
+    return result
+
 def netsh_adv(args):
     """Run a netsh advfirewall command."""
+    cmd_str = "netsh advfirewall " + " ".join(args)
     try:
         r = subprocess.run(["netsh", "advfirewall"] + args, capture_output=True)
-        return r.returncode, _decode(r.stdout), _decode(r.stderr)
+        out, err = _decode(r.stdout), _decode(r.stderr)
+        _log_cmd(cmd_str, r.returncode, out, err)
+        return r.returncode, out, err
     except Exception as e:
+        _log_cmd(cmd_str, 1, "", str(e))
         return 1, "", str(e)
 
 def fw_open(port, name):
@@ -107,6 +182,7 @@ def _decode(b):
 
 def netsh(args):
     """Run netsh command. Capture bytes, decode with GBK fallback."""
+    cmd_str = "netsh interface portproxy " + " ".join(args)
     try:
         r = subprocess.run(
             ["netsh", "interface", "portproxy"] + args,
@@ -116,6 +192,7 @@ def netsh(args):
         err = _decode(r.stderr)
         if r.returncode != 0 and not out and not err:
             return _netsh_shell(args)
+        _log_cmd(cmd_str, r.returncode, out, err)
         return r.returncode, out, err
     except Exception:
         return _netsh_shell(args)
@@ -278,6 +355,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "rules": rules, "admin": is_admin()})
             elif self.path == "/api/status":
                 self._json({"ok": True, "admin": is_admin()})
+            elif self.path == "/api/logs":
+                self._json({"ok": True, "logs": CMD_LOG})
+            elif self.path == "/api/wsl-detect":
+                self._json({"ok": True, **detect_wsl()})
             else:
                 self._json({"error": "not found"}, 404)
         except Exception as e:
@@ -360,14 +441,30 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     self._json({"ok": False, "error": str(e)}, 400)
             elif self.path == "/api/import":
-                rules = data.get("rules")
-                if not isinstance(rules, list):
-                    return self._json({"ok": False, "error": "无效的规则列表"}, 400)
+                fmt = str(data.get("format") or "json").strip().lower()
+                if fmt == "csv":
+                    csv_text = data.get("csv_text") or ""
+                    if not csv_text.strip():
+                        return self._json({"ok": False, "error": "CSV 内容为空"}, 400)
+                    rules, csv_errors = parse_csv(csv_text)
+                    if csv_errors and not rules:
+                        return self._json({"ok": False, "error": csv_errors[0]}, 400)
+                else:
+                    rules = data.get("rules")
+                    csv_errors = []
+                    if not isinstance(rules, list):
+                        return self._json({"ok": False, "error": "无效的规则列表"}, 400)
                 try:
                     added, skipped = import_rules(rules)
-                    self._json({"ok": True, "added": len(added), "skipped": len(skipped)})
+                    resp = {"ok": True, "added": len(added), "skipped": len(skipped)}
+                    if csv_errors:
+                        resp["csv_errors"] = csv_errors
+                    self._json(resp)
                 except Exception as e:
                     self._json({"ok": False, "error": str(e)}, 400)
+            elif self.path == "/api/logs/clear":
+                CMD_LOG.clear()
+                self._json({"ok": True, "message": "logs cleared"})
             elif self.path == "/api/elevate":
                 ok = relaunch_as_admin()
                 if ok:

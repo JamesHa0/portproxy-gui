@@ -23,20 +23,42 @@
   --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
   --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
   --radius: 10px;
+  --log-bg: #f8fafc;
+}
+[data-theme="dark"] {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-light: #1e3a5f;
+  --danger: #f87171;
+  --danger-hover: #ef4444;
+  --danger-light: #3b1c1c;
+  --text: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-light: #64748b;
+  --border: #334155;
+  --success: #4ade80;
+  --success-light: #14352a;
+  --shadow: 0 1px 3px rgba(0,0,0,.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.4);
+  --log-bg: #0f172a;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh;
+  transition: background .2s, color .2s;
 }
 .container { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
-.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 10px; }
 .header-left { display: flex; align-items: center; gap: 14px; }
 .logo { width: 44px; height: 44px; background: linear-gradient(135deg, #2563eb, #3b82f6); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-size: 22px; flex-shrink: 0; }
 .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
 .header .subtitle { font-size: 13px; color: var(--text-secondary); }
-.btn-refresh { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 16px; font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all .15s; white-space: nowrap; }
-.btn-refresh:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.btn-refresh, .btn-theme, .btn-lang { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all .15s; white-space: nowrap; }
+.btn-refresh:hover, .btn-theme:hover, .btn-lang:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
 .btn-elevate { background: var(--primary); border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background .15s; white-space: nowrap; }
 .btn-elevate:hover { background: var(--primary-hover); }
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; margin-bottom: 20px; }
@@ -49,7 +71,7 @@ body {
 .form-group input::placeholder { color: var(--text-light); }
 .form-group select { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text); background: var(--card); transition: border-color .15s, box-shadow .15s; cursor: pointer; }
 .form-group select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
-.type-tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569; font-family: -apple-system, sans-serif; }
+.type-tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--primary-light); color: var(--primary); font-family: -apple-system, sans-serif; }
 .btn-add { background: var(--primary); color: white; border: none; border-radius: 8px; padding: 9px 22px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; height: 38px; }
 .btn-add:hover { background: var(--primary-hover); }
 .btn-add:active { transform: translateY(1px); }
@@ -68,7 +90,7 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 thead th { text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .3px; border-bottom: 2px solid var(--border); }
 tbody td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 13px; }
 tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: #f8fafc; }
+tbody tr:hover { background: var(--primary-light); }
 .arrow { color: var(--text-light); text-align: center; }
 .protocol-tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--primary-light); color: var(--primary); font-family: -apple-system, sans-serif; }
 .btn-delete { background: var(--danger-light); color: var(--danger); border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; font-family: -apple-system, sans-serif; }
@@ -108,52 +130,77 @@ tbody tr:hover { background: #f8fafc; }
 .admin-banner .icon { font-size: 18px; flex-shrink: 0; }
 .admin-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
 .admin-badge .dot { width: 7px; height: 7px; border-radius: 50%; }
-.admin-badge.ok { background: var(--success-light); color: #15803d; }
+.admin-badge.ok { background: var(--success-light); color: var(--success); }
 .admin-badge.ok .dot { background: var(--success); }
 .admin-badge.no { background: var(--danger-light); color: var(--danger-hover); }
 .admin-badge.no .dot { background: var(--danger); }
+.wsl-banner { display: none; align-items: center; gap: 10px; background: var(--success-light); border: 1px solid var(--success); color: var(--text); padding: 10px 16px; border-radius: var(--radius); margin-bottom: 20px; font-size: 13px; cursor: pointer; }
+.wsl-banner:hover { opacity: .85; }
+.wsl-banner .icon { font-size: 16px; }
+/* Log panel */
+.log-card { display: none; }
+.log-card.show { display: block; }
+.log-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.log-actions { display: flex; gap: 8px; }
+.log-actions button { background: var(--card); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.log-actions button:hover { border-color: var(--primary); color: var(--primary); }
+.log-body { background: var(--log-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 220px; overflow-y: auto; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 12px; line-height: 1.7; }
+.log-entry { margin-bottom: 6px; }
+.log-entry .cmd { color: var(--primary); font-weight: 600; }
+.log-entry .out { color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
+.log-entry .err { color: var(--danger); white-space: pre-wrap; word-break: break-all; }
+.log-toggle { background: var(--card); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; transition: all .15s; }
+.log-toggle:hover { border-color: var(--primary); color: var(--primary); }
 </style>
 </head>
 <body>
 <div class="container">
   <div id="adminBanner" class="admin-banner" style="display:none">
     <span class="icon">&#9888;</span>
-    <span>当前未以管理员身份运行，添加/删除规则可能失败。请右键“以管理员身份运行”启动本程序。</span>
+    <span data-i18n="admin_banner">当前未以管理员身份运行，添加/删除规则可能失败。请右键"以管理员身份运行"启动本程序。</span>
+  </div>
+  <div id="wslBanner" class="wsl-banner" onclick="fillWslIp()">
+    <span class="icon">&#128187;</span>
+    <span id="wslText"></span>
   </div>
   <div class="header">
     <div class="header-left">
       <div class="logo">&#128279;</div>
       <div>
-        <h1>端口转发管理器</h1>
+        <h1 data-i18n="app_title">端口转发管理器</h1>
         <div class="subtitle">基于 Windows netsh interface portproxy</div>
         <span id="adminBadge" class="admin-badge" style="display:none"></span>
       </div>
     </div>
-    <button class="btn-refresh" onclick="loadRules()">&#8635; 刷新</button>
-    <button class="btn-elevate" id="btnElevate" onclick="elevate()" style="display:none">&#9889; 以管理员身份重启</button>
+    <div class="header-actions">
+      <button class="btn-lang" id="btnLang" onclick="toggleLang()">EN</button>
+      <button class="btn-theme" id="btnTheme" onclick="toggleTheme()">&#127769;</button>
+      <button class="btn-refresh" onclick="loadRules()">&#8635; <span data-i18n="refresh">刷新</span></button>
+      <button class="btn-elevate" id="btnElevate" onclick="elevate()" style="display:none">&#9889; <span data-i18n="elevate">以管理员身份重启</span></button>
+    </div>
   </div>
 
   <div class="card">
-    <div class="card-title"><span class="dot"></span> 添加转发规则</div>
+    <div class="card-title"><span class="dot"></span> <span data-i18n="add_rule">添加转发规则</span></div>
     <div class="form-grid">
       <div class="form-group">
-        <label>监听地址</label>
+        <label data-i18n="listen_addr">监听地址</label>
         <input type="text" id="listenAddress" placeholder="0.0.0.0" value="0.0.0.0">
       </div>
       <div class="form-group">
-        <label>监听端口</label>
+        <label data-i18n="listen_port">监听端口</label>
         <input type="number" id="listenPort" placeholder="8080">
       </div>
       <div class="form-group">
-        <label>目标地址</label>
+        <label data-i18n="connect_addr">目标地址</label>
         <input type="text" id="connectAddress" placeholder="192.168.1.100">
       </div>
       <div class="form-group">
-        <label>目标端口</label>
+        <label data-i18n="connect_port">目标端口</label>
         <input type="number" id="connectPort" placeholder="80">
       </div>
       <div class="form-group">
-        <label>类型</label>
+        <label data-i18n="type">类型</label>
         <select id="ruleType">
           <option value="v4tov4">v4tov4</option>
           <option value="v4tov6">v4tov6</option>
@@ -161,22 +208,22 @@ tbody tr:hover { background: #f8fafc; }
           <option value="v6tov6">v6tov6</option>
         </select>
       </div>
-      <label class="fw-check"><input type="checkbox" id="fwAllow"> 放行防火墙入站</label>
-      <button class="btn-add" onclick="addRule()">+ 添加</button>
+      <label class="fw-check"><input type="checkbox" id="fwAllow"> <span data-i18n="fw_allow">放行防火墙入站</span></label>
+      <button class="btn-add" onclick="addRule()">+ <span data-i18n="add">添加</span></button>
       <div class="edit-hint" id="editHint"></div>
     </div>
-    <p class="form-note">仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。</p>
+    <p class="form-note" data-i18n="form_note">仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。</p>
   </div>
 
   <div class="card">
     <div class="table-header">
-      <div class="card-title" style="margin-bottom:0"><span class="dot"></span> 当前规则</div>
+      <div class="card-title" style="margin-bottom:0"><span class="dot"></span> <span data-i18n="current_rules">当前规则</span></div>
       <div style="display:flex;gap:10px;align-items:center">
         <span class="rules-count" id="rulesCount"></span>
-        <button class="btn-export" id="btnExport" onclick="downloadExport()">导出</button>
-        <button class="btn-import" id="btnImport" onclick="document.getElementById('importFile').click()">导入</button>
-        <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importFile(this)">
-        <button class="btn-clear-all" id="btnClearAll" onclick="confirmClearAll()" style="display:none">清空全部</button>
+        <button class="btn-export" onclick="downloadExport()" data-i18n="export">导出</button>
+        <button class="btn-import" onclick="document.getElementById('importFile').click()" data-i18n="import">导入</button>
+        <input type="file" id="importFile" accept=".json,.csv,application/json,text/csv" style="display:none" onchange="importFile(this)">
+        <button class="btn-clear-all" id="btnClearAll" onclick="confirmClearAll()" style="display:none" data-i18n="clear_all">清空全部</button>
       </div>
     </div>
     <div class="table-wrap">
@@ -185,6 +232,21 @@ tbody tr:hover { background: #f8fafc; }
       </div>
     </div>
   </div>
+
+  <!-- Log Panel -->
+  <div class="card log-card" id="logCard">
+    <div class="log-header">
+      <div class="card-title" style="margin-bottom:0"><span class="dot"></span> <span data-i18n="cmd_log">命令日志</span></div>
+      <div class="log-actions">
+        <button onclick="loadLogs()" data-i18n="refresh">刷新</button>
+        <button onclick="clearLogs()" data-i18n="clear_log">清空</button>
+      </div>
+    </div>
+    <div class="log-body" id="logBody"><span style="color:var(--text-light)" data-i18n="no_logs">暂无日志</span></div>
+  </div>
+  <div style="text-align:center;margin-bottom:20px">
+    <button class="log-toggle" id="logToggle" onclick="toggleLogPanel()" data-i18n="show_log">显示日志面板</button>
+  </div>
 </div>
 
 <div class="modal-overlay" id="modalOverlay">
@@ -192,7 +254,7 @@ tbody tr:hover { background: #f8fafc; }
     <h3 id="modalTitle">确认删除</h3>
     <p id="modalText">确定要删除这条规则吗？</p>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-cancel" onclick="closeModal()" data-i18n="cancel">取消</button>
       <button class="btn-confirm" id="modalConfirm">确认删除</button>
     </div>
   </div>
@@ -201,6 +263,85 @@ tbody tr:hover { background: #f8fafc; }
 <div class="toast" id="toast"></div>
 
 <script>
+// ── i18n ──
+var I18N = {
+  zh: {app_title:"端口转发管理器",refresh:"刷新",elevate:"以管理员身份重启",add_rule:"添加转发规则",listen_addr:"监听地址",listen_port:"监听端口",connect_addr:"目标地址",connect_port:"目标端口",type:"类型",fw_allow:"放行防火墙入站",add:"添加",form_note:"仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。",current_rules:"当前规则",export:"导出",import:"导入",clear_all:"清空全部",cmd_log:"命令日志",clear_log:"清空",no_logs:"暂无日志",show_log:"显示日志面板",hide_log:"隐藏日志面板",cancel:"取消",admin_banner:"当前未以管理员身份运行，添加/删除规则可能失败。请右键"以管理员身份运行"启动本程序。",admin:"管理员",need_admin:"需管理员",rule_added:"规则添加成功",rule_deleted:"规则删除成功",cleared:"已清空所有规则",import_ok:"已导入",skipped:"跳过",dup_or_invalid:"重复或无效",export_ok:"已导出",rules_unit:"条规则",wsl_found:"检测到 WSL2",click_fill:"点击快速填充目标地址",wsl_not_found:"未检测到 WSL"},
+  en: {app_title:"Port Forwarding Manager",refresh:"Refresh",elevate:"Restart as Admin",add_rule:"Add Forwarding Rule",listen_addr:"Listen Address",listen_port:"Listen Port",connect_addr:"Target Address",connect_port:"Target Port",type:"Type",fw_allow:"Allow Firewall Inbound",add:"Add",form_note:"Only <strong>TCP</strong> protocol is supported. Four types: v4tov4 / v4tov6 / v6tov4 / v6tov6. Empty listen address defaults to 0.0.0.0.",current_rules:"Current Rules",export:"Export",import:"Import",clear_all:"Clear All",cmd_log:"Command Log",clear_log:"Clear",no_logs:"No logs yet",show_log:"Show Log Panel",hide_log:"Hide Log Panel",cancel:"Cancel",admin_banner:"Not running as Administrator. Add/delete operations may fail. Please right-click and 'Run as administrator'.",admin:"Admin",need_admin:"Need Admin",rule_added:"Rule added successfully",rule_deleted:"Rule deleted",cleared:"All rules cleared",import_ok:"Imported",skipped:"skipped",dup_or_invalid:"duplicate or invalid",export_ok:"Exported",rules_unit:"rules",wsl_found:"WSL2 detected",click_fill:"Click to fill target address",wsl_not_found:"WSL not detected"}
+};
+var curLang = localStorage.getItem('pp-lang') || 'zh';
+function applyI18n() {
+  var dict = I18N[curLang];
+  document.querySelectorAll('[data-i18n]').forEach(function(el) {
+    var key = el.getAttribute('data-i18n');
+    if (dict[key] !== undefined) el.innerHTML = dict[key];
+  });
+  document.getElementById('btnLang').textContent = curLang === 'zh' ? 'EN' : '中';
+  document.title = 'PortProxy - ' + dict.app_title;
+}
+function toggleLang() {
+  curLang = curLang === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('pp-lang', curLang);
+  applyI18n();
+}
+function tr(key) { return (I18N[curLang] || I18N.zh)[key] || key; }
+
+// ── Theme ──
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('pp-theme', theme);
+  document.getElementById('btnTheme').innerHTML = theme === 'dark' ? '&#9728;' : '&#127769;';
+}
+function toggleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme');
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+(function(){ var t = localStorage.getItem('pp-theme') || 'light'; applyTheme(t); })();
+
+// ── Log Panel ──
+var logVisible = false;
+function toggleLogPanel() {
+  logVisible = !logVisible;
+  document.getElementById('logCard').classList.toggle('show', logVisible);
+  document.getElementById('logToggle').textContent = logVisible ? tr('hide_log') : tr('show_log');
+  if (logVisible) loadLogs();
+}
+function loadLogs() {
+  fetch('/api/logs').then(function(r){return r.json();}).then(function(data){
+    if (!data.ok) return;
+    var body = document.getElementById('logBody');
+    if (!data.logs || data.logs.length === 0) { body.innerHTML = '<span style="color:var(--text-light)">' + tr('no_logs') + '</span>'; return; }
+    var html = '';
+    var logs = data.logs.slice(-100).reverse();
+    for (var i = 0; i < logs.length; i++) {
+      var l = logs[i];
+      html += '<div class="log-entry"><span class="cmd">[' + esc(l.time) + '] $ ' + esc(l.cmd) + '</span>';
+      if (l.stderr) html += '<div class="err">' + esc(l.stderr) + '</div>';
+      else if (l.stdout) html += '<div class="out">' + esc(l.stdout) + '</div>';
+      html += '</div>';
+    }
+    body.innerHTML = html;
+  }).catch(function(){});
+}
+function clearLogs() {
+  fetch('/api/logs/clear', {method:'POST'}).then(function(){ loadLogs(); });
+}
+
+// ── WSL Detection ──
+var wslIp = '';
+function detectWsl() {
+  fetch('/api/wsl-detect').then(function(r){return r.json();}).then(function(d){
+    if (d.ok && d.available) {
+      wslIp = d.wsl_ip;
+      document.getElementById('wslText').textContent = tr('wsl_found') + ' (' + d.wsl_ip + ') - ' + tr('click_fill');
+      document.getElementById('wslBanner').style.display = 'flex';
+    }
+  }).catch(function(){});
+}
+function fillWslIp() {
+  if (wslIp) { document.getElementById('connectAddress').value = wslIp; showToast('WSL IP: ' + wslIp, 'success'); }
+}
+
+// ── Core ──
 var pendingDelete = null;
 var pendingClearAll = false;
 
@@ -223,18 +364,15 @@ function updateAdmin(isAdmin) {
   var banner = document.getElementById('adminBanner');
   if (isAdmin === true) {
     document.getElementById('btnElevate').style.display = 'none';
-    badge.className = 'admin-badge ok';
-    badge.innerHTML = '<span class="dot"></span>管理员';
+    badge.className = 'admin-badge ok'; badge.style.display = 'inline-flex';
+    badge.innerHTML = '<span class="dot"></span>' + tr('admin');
     banner.style.display = 'none';
   } else if (isAdmin === false) {
     document.getElementById('btnElevate').style.display = 'inline-flex';
-    badge.className = 'admin-badge no';
-    badge.innerHTML = '<span class="dot"></span>需管理员';
+    badge.className = 'admin-badge no'; badge.style.display = 'inline-flex';
+    badge.innerHTML = '<span class="dot"></span>' + tr('need_admin');
     banner.style.display = 'flex';
-  } else {
-    badge.style.display = 'none';
-    banner.style.display = 'none';
-  }
+  } else { badge.style.display = 'none'; banner.style.display = 'none'; }
 }
 function renderRules(rules) {
   var body = document.getElementById('rulesBody');
@@ -242,133 +380,83 @@ function renderRules(rules) {
   var btnClear = document.getElementById('btnClearAll');
   if (!rules || rules.length === 0) {
     body.innerHTML = '<div class="empty-state"><div class="icon">&#128203;</div><p>暂无转发规则</p></div>';
-    count.textContent = '';
-    btnClear.style.display = 'none';
-    return;
+    count.textContent = ''; btnClear.style.display = 'none'; return;
   }
-  count.innerHTML = '共 <strong>' + rules.length + '</strong> 条规则';
+  count.innerHTML = '共 <strong>' + rules.length + '</strong> ' + tr('rules_unit');
   btnClear.style.display = 'inline-block';
-  var html = '<table><thead><tr><th>监听地址</th><th>监听端口</th><th></th><th>目标地址</th><th>目标端口</th><th>协议</th><th>类型</th><th>操作</th></tr></thead><tbody>';
+  var html = '<table><thead><tr><th>' + tr('listen_addr') + '</th><th>' + tr('listen_port') + '</th><th></th><th>' + tr('connect_addr') + '</th><th>' + tr('connect_port') + '</th><th>Protocol</th><th>' + tr('type') + '</th><th>Actions</th></tr></thead><tbody>';
   for (var i = 0; i < rules.length; i++) {
     var r = rules[i];
-    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type||'v4tov4').toLowerCase()) + '</span></td><td><button class="btn-edit" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">编辑</button><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">删除</button></td></tr>';
+    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type||'v4tov4')) + '</span></td><td><button class="btn-edit" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">Edit</button><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">Del</button></td></tr>';
   }
   html += '</tbody></table>';
   body.innerHTML = html;
 }
 
-function isValidPort(s) {
-  if (!s) return false;
-  if (!/^\d+$/.test(s)) return false;
-  var p = parseInt(s, 10);
-  return p >= 1 && p <= 65535;
-}
-
-function isValidAddr(s) {
-  if (!s || s === '*') return true;
-  var ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
-  if (ip) {
-    for (var i = 1; i <= 4; i++) {
-      var n = parseInt(ip[i], 10);
-      if (n < 0 || n > 255) return false;
-    }
-    return true;
-  }
-  return /^[A-Za-z0-9.\-]+$/.test(s);
-}
+function isValidPort(s) { if (!s) return false; if (!/^\d+$/.test(s)) return false; var p = parseInt(s,10); return p >= 1 && p <= 65535; }
+function isValidAddr(s) { if (!s || s === '*') return true; var ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s); if (ip) { for (var i=1;i<=4;i++){if(parseInt(ip[i],10)>255)return false;} return true; } return /^[A-Za-z0-9.\-]+$/.test(s); }
 
 function addRule() {
   var la = document.getElementById('listenAddress').value.trim();
   var lp = document.getElementById('listenPort').value.trim();
   var ca = document.getElementById('connectAddress').value.trim();
   var cp = document.getElementById('connectPort').value.trim();
-
-  if (!lp) { showToast('请输入监听端口', 'error'); return; }
-  if (!isValidPort(lp)) { showToast('监听端口必须为 1-65535 的数字', 'error'); return; }
-  if (!ca) { showToast('请输入目标地址', 'error'); return; }
-  if (!isValidAddr(ca)) { showToast('目标地址格式错误 (应为 IP 或主机名)', 'error'); return; }
-  if (cp && !isValidPort(cp)) { showToast('目标端口必须为 1-65535 的数字', 'error'); return; }
-  if (la && !isValidAddr(la)) { showToast('监听地址格式错误 (应为 IP 或主机名)', 'error'); return; }
-
+  if (!lp) { showToast(tr('listen_port') + '!', 'error'); return; }
+  if (!isValidPort(lp)) { showToast('Port 1-65535', 'error'); return; }
+  if (!ca) { showToast(tr('connect_addr') + '!', 'error'); return; }
+  if (!isValidAddr(ca)) { showToast('Invalid address', 'error'); return; }
+  if (cp && !isValidPort(cp)) { showToast('Target port 1-65535', 'error'); return; }
+  if (la && !isValidAddr(la)) { showToast('Invalid listen address', 'error'); return; }
   var fw = document.getElementById('fwAllow').checked;
-    var payload = {listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp, type: document.getElementById('ruleType').value, firewall: fw};
-    if (editState) { payload.editType = editState.type; payload.editListenPort = editState.listenPort; }
-    fetch('/api/rules', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    })
-      .then(function(r) { return r.json(); })
+  var payload = {listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp, type: document.getElementById('ruleType').value, firewall: fw};
+  if (editState) { payload.editType = editState.type; payload.editListenPort = editState.listenPort; payload.editListenAddress = editState.addr; }
+  fetch('/api/rules', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+    .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (data.ok) { showToast('规则添加成功', 'success'); cancelEdit(); loadRules(); }
-      else { showToast(data.error || '添加失败', 'error'); if (data.needAdmin) updateAdmin(false); }
+      if (data.ok) { showToast(tr('rule_added'), 'success'); cancelEdit(); loadRules(); }
+      else { showToast(data.error || 'Failed', 'error'); if (data.needAdmin) updateAdmin(false); }
     })
-    .catch(function(e) { showToast('网络错误: ' + e.message, 'error'); });
+    .catch(function(e) { showToast('Network error: ' + e.message, 'error'); });
 }
 
 function confirmDelete(addr, port, type) {
-  pendingDelete = {addr: addr, port: port, type: type};
-  pendingClearAll = false;
+  pendingDelete = {addr: addr, port: port, type: type}; pendingClearAll = false;
   document.getElementById('modalTitle').textContent = '确认删除';
   document.getElementById('modalText').innerHTML = '确定要删除 <code>' + esc(addr) + ':' + esc(port) + '</code> 这条转发规则吗？';
   document.getElementById('modalConfirm').textContent = '确认删除';
   document.getElementById('modalOverlay').classList.add('show');
 }
-
 function confirmClearAll() {
-  pendingDelete = null;
-  pendingClearAll = true;
+  pendingDelete = null; pendingClearAll = true;
   document.getElementById('modalTitle').textContent = '确认清空';
   document.getElementById('modalText').innerHTML = '确定要<strong>清空所有</strong>端口转发规则吗？此操作不可撤销。';
   document.getElementById('modalConfirm').textContent = '确认清空';
   document.getElementById('modalOverlay').classList.add('show');
 }
-
-function closeModal() {
-  document.getElementById('modalOverlay').classList.remove('show');
-  pendingDelete = null;
-  pendingClearAll = false;
-}
+function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); pendingDelete = null; pendingClearAll = false; }
 
 document.getElementById('modalConfirm').addEventListener('click', function() {
   closeModal();
   if (pendingDelete) {
-    fetch('/api/rules/delete', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({listenAddress: pendingDelete.addr, listenPort: pendingDelete.port, type: pendingDelete.type})
-    })
+    fetch('/api/rules/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({listenAddress: pendingDelete.addr, listenPort: pendingDelete.port, type: pendingDelete.type}) })
       .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.ok) { showToast('规则删除成功', 'success'); loadRules(); }
-        else { showToast(data.error || '删除失败', 'error'); }
-      })
-      .catch(function(e) { showToast('网络错误: ' + e.message, 'error'); });
+      .then(function(data) { if (data.ok) { showToast(tr('rule_deleted'), 'success'); loadRules(); } else { showToast(data.error || 'Failed', 'error'); } })
+      .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
     pendingDelete = null;
   } else if (pendingClearAll) {
-    fetch('/api/rules', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({action: 'clear'})
-    })
+    fetch('/api/rules', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'clear'}) })
       .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.ok) { showToast('已清空所有规则', 'success'); loadRules(); }
-        else { showToast(data.error || '清空失败', 'error'); }
-      })
-      .catch(function(e) { showToast('网络错误: ' + e.message, 'error'); });
+      .then(function(data) { if (data.ok) { showToast(tr('cleared'), 'success'); loadRules(); } else { showToast(data.error || 'Failed', 'error'); } })
+      .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
     pendingClearAll = false;
   }
 });
 
 function elevate() {
-  fetch('/api/elevate', {method:'POST'})
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if (d.ok) { showToast('正在以管理员身份重启...', 'success'); setTimeout(function(){ location.reload(); }, 1200); }
-      else { showToast(d.error || '提权失败', 'error'); }
-    })
-    .catch(function(e){ showToast('网络错误: ' + e.message, 'error'); });
+  fetch('/api/elevate', {method:'POST'}).then(function(r){return r.json();}).then(function(d){
+    if (d.ok) { showToast('Restarting as admin...', 'success'); setTimeout(function(){ location.reload(); }, 1200); }
+    else { showToast(d.error || 'Failed', 'error'); }
+  }).catch(function(e){ showToast('Error: ' + e.message, 'error'); });
 }
 
 var editState = null;
@@ -378,82 +466,69 @@ function enterEdit(addr, port, type) {
   document.getElementById('listenPort').value = port;
   document.getElementById('ruleType').value = type;
   var hint = document.getElementById('editHint');
-  hint.textContent = '编辑模式：修改后点击“添加”将更新 ' + addr + ':' + port + ' (' + type + ')';
+  hint.textContent = '编辑模式：修改后点击"添加"将更新 ' + addr + ':' + port + ' (' + type + ')';
   hint.classList.add('show');
   document.getElementById('listenPort').focus();
 }
 function cancelEdit() {
   editState = null;
   document.getElementById('editHint').classList.remove('show');
-  document.getElementById('listenAddress').value = '';
+  document.getElementById('listenAddress').value = '0.0.0.0';
   document.getElementById('listenPort').value = '';
   document.getElementById('connectAddress').value = '';
   document.getElementById('connectPort').value = '';
   document.getElementById('ruleType').value = 'v4tov4';
 }
 function downloadExport() {
-  fetch('/api/export')
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      if (!data.ok) { showToast(data.error || '导出失败', 'error'); return; }
-      var blob = new Blob([JSON.stringify(data.rules, null, 2)], {type: 'application/json'});
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url; a.download = 'portproxy-rules.json';
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a); URL.revokeObjectURL(url);
-      showToast('已导出 ' + data.rules.length + ' 条规则', 'success');
-    })
-    .catch(function(e){ showToast('网络错误: ' + e.message, 'error'); });
+  fetch('/api/export').then(function(r){return r.json();}).then(function(data){
+    if (!data.ok) { showToast(data.error || 'Failed', 'error'); return; }
+    var blob = new Blob([JSON.stringify(data.rules, null, 2)], {type: 'application/json'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = 'portproxy-rules.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast(tr('export_ok') + ' ' + data.rules.length + ' ' + tr('rules_unit'), 'success');
+  }).catch(function(e){ showToast('Error: ' + e.message, 'error'); });
 }
 function importFile(input) {
   if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var ext = file.name.split('.').pop().toLowerCase();
   var reader = new FileReader();
   reader.onload = function(ev) {
-    var rules;
-    try { rules = JSON.parse(ev.target.result); }
-    catch (e) { showToast('JSON 解析失败: ' + e.message, 'error'); return; }
-    fetch('/api/import', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({rules: rules})
-    })
-      .then(function(r){ return r.json(); })
+    var payload;
+    if (ext === 'csv') {
+      payload = {format: 'csv', csv_text: ev.target.result};
+    } else {
+      var rules;
+      try { rules = JSON.parse(ev.target.result); }
+      catch (e) { showToast('JSON parse error: ' + e.message, 'error'); return; }
+      payload = {format: 'json', rules: rules};
+    }
+    fetch('/api/import', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+      .then(function(r){return r.json();})
       .then(function(data){
         if (data.ok) {
-          var msg = '已导入 ' + data.added + ' 条';
-          if (data.skipped) msg += '，跳过 ' + data.skipped + ' 条（重复或无效）';
+          var msg = tr('import_ok') + ' ' + data.added + ' ' + tr('rules_unit');
+          if (data.skipped) msg += ', ' + tr('skipped') + ' ' + data.skipped + ' (' + tr('dup_or_invalid') + ')';
           showToast(msg, 'success'); loadRules();
-        } else { showToast(data.error || '导入失败', 'error'); }
+        } else { showToast(data.error || 'Import failed', 'error'); }
       })
-      .catch(function(e){ showToast('网络错误: ' + e.message, 'error'); });
+      .catch(function(e){ showToast('Error: ' + e.message, 'error'); });
   };
-  reader.readAsText(input.files[0]);
+  reader.readAsText(file);
   input.value = '';
 }
 
 function showToast(msg, type) {
   var t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast ' + type + ' show';
+  t.textContent = msg; t.className = 'toast ' + type + ' show';
   clearTimeout(t._timeout);
   t._timeout = setTimeout(function() { t.classList.remove('show'); }, 3000);
 }
+function esc(s) { var d = document.createElement('div'); d.textContent = (s || ''); return d.innerHTML; }
+function escAttr(s) { return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function esc(s) {
-  var d = document.createElement('div');
-  d.textContent = (s || '');
-  return d.innerHTML;
-}
-
-function escAttr(s) {
-  return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeModal();
-});
-
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 document.getElementById('rulesBody').addEventListener('click', function(e) {
   var editBtn = e.target.closest ? e.target.closest('.btn-edit') : null;
   if (editBtn) { enterEdit(editBtn.getAttribute('data-addr'), editBtn.getAttribute('data-port'), editBtn.getAttribute('data-type')); return; }
@@ -462,9 +537,10 @@ document.getElementById('rulesBody').addEventListener('click', function(e) {
   confirmDelete(btn.getAttribute('data-addr'), btn.getAttribute('data-port'), btn.getAttribute('data-type'));
 });
 
+// Init
+applyI18n();
 loadRules();
+detectWsl();
 </script>
 </body>
 </html>
-
-
