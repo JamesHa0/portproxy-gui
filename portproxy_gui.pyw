@@ -2,118 +2,18 @@
 """PortProxy GUI - netsh portproxy desktop manager (tkinter)"""
 
 import os, re, subprocess, tempfile, tkinter as tk, ctypes, sys, json, csv, io
+import threading
 from tkinter import ttk, messagebox
 from datetime import datetime
 from i18n import tr, set_lang, get_lang
-
-# ── command log ─────────────────────────────────────
-CMD_LOG = []
-CMD_LOG_MAX = 200
-
-def _log_cmd(cmd_str, returncode, stdout, stderr):
-    entry = {
-        "time": datetime.now().strftime("%H:%M:%S"),
-        "cmd": cmd_str,
-        "returncode": returncode,
-        "stdout": (stdout or "").strip(),
-        "stderr": (stderr or "").strip(),
-    }
-    CMD_LOG.append(entry)
-    if len(CMD_LOG) > CMD_LOG_MAX:
-        del CMD_LOG[:len(CMD_LOG) - CMD_LOG_MAX]
-
-# ── netsh logic ──────────────────────────────────────
-
-def _decode(b):
-    """Decode subprocess bytes robustly (Chinese Windows uses GBK/CP936)."""
-    if not b:
-        return ""
-    for enc in ("gbk", "cp936", "utf-8", "latin-1"):
-        try:
-            return b.decode(enc)
-        except Exception:
-            continue
-    return b.decode("utf-8", errors="replace")
-
-def netsh(args):
-    """Run netsh command. capture_output primary, shell redirect fallback."""
-    cmd_str = "netsh interface portproxy " + " ".join(args)
-    try:
-        r = subprocess.run(
-            ["netsh", "interface", "portproxy"] + args,
-            capture_output=True,
-        )
-        out = _decode(r.stdout)
-        err = _decode(r.stderr)
-        if r.returncode != 0 and not out and not err:
-            return _netsh_shell(args)
-        _log_cmd(cmd_str, r.returncode, out, err)
-        return r.returncode, out, err
-    except Exception:
-        return _netsh_shell(args)
-
-
-def _netsh_shell(args):
-    """Fallback: use shell redirect to temp file."""
-    try:
-        tmp = os.path.join(tempfile.gettempdir(), "netsh_out.txt")
-        cmd = " ".join(["netsh", "interface", "portproxy"] + args)
-        r = subprocess.run(cmd + " > " + tmp + " 2>&1", shell=True)
-        output = ""
-        if os.path.exists(tmp):
-            try:
-                with open(tmp, "rb") as f:
-                    output = _decode(f.read())
-                os.remove(tmp)
-            except Exception:
-                pass
-        return r.returncode, output, ""
-    except Exception as e:
-        return 1, "", str(e)
-
-
-def list_rules():
-    rules = []
-    pat = re.compile(r"([0-9a-fA-F.:*]+)\s+(\d+)\s+([0-9a-fA-F.:*]+)\s+(\d+)")
-    seen = set()
-    for rtype in TYPES:
-        code, out, err = netsh(["show", rtype])
-        if code != 0:
-            continue
-        for line in out.splitlines():
-            m = pat.search(line)
-            if not m:
-                continue
-            la, lp, ca, cp = m.group(1), m.group(2), m.group(3), m.group(4)
-            key = (rtype, la, lp)
-            if key in seen:
-                continue
-            seen.add(key)
-            rules.append({
-                "type": rtype,
-                "listenAddress": la, "listenPort": lp,
-                "connectAddress": ca, "connectPort": cp,
-            })
-    return rules
-
-
-def do_netsh(op, listen_addr, listen_port, connect_addr="", connect_port="", rtype="v4tov4"):
-    args = [op, rtype, "listenport=" + str(listen_port or "")]
-    if op == "add":
-        args.append("connectaddress=" + str(connect_addr or ""))
-    if connect_port:
-        args.append("connectport=" + str(connect_port))
-    if listen_addr and listen_addr != "*":
-        args.append("listenaddress=" + str(listen_addr))
-    args.append("protocol=tcp")
-    code, out, err = netsh(args)
-    if code != 0:
-        raise RuntimeError(_friendly_error((err or out).strip()))
-
-
-# ── validation helpers ───────────────────────────────
-
-TYPES = ("v4tov4", "v4tov6", "v6tov4", "v6tov6")
+from portproxy_common import (
+    TYPES, CMD_LOG, CMD_LOG_MAX, _log_cmd,
+    netsh, list_rules, do_netsh, export_rules, import_rules,
+    validate_port, validate_ip, is_admin, _friendly_error,
+    NetshError, detect_wsl, relaunch_as_admin,
+    netsh_adv, fw_open, fw_close, parse_csv, CSV_HEADER,
+    check_rules, check_single_rule,
+)
 
 # ---- system tray constants (ctypes Shell_NotifyIcon) ----
 try:
@@ -202,183 +102,6 @@ def set_startup(enable):
     except Exception:
         return False
 
-def netsh_adv(args):
-    """Run a netsh advfirewall command."""
-    cmd_str = "netsh advfirewall " + " ".join(args)
-    try:
-        r = subprocess.run(["netsh", "advfirewall"] + args, capture_output=True)
-        out, err = _decode(r.stdout), _decode(r.stderr)
-        _log_cmd(cmd_str, r.returncode, out, err)
-        return r.returncode, out, err
-    except Exception as e:
-        _log_cmd(cmd_str, 1, "", str(e))
-        return 1, "", str(e)
-
-def fw_open(port, name):
-    """Allow inbound TCP on a port. Best-effort."""
-    code, out, err = netsh_adv(["firewall", "add", "rule",
-        "name=" + name, "dir=in", "action=allow", "protocol=TCP",
-        "localport=" + str(port)])
-    return code == 0
-
-def fw_close(port, name):
-    """Delete the inbound firewall rule we created. Best-effort."""
-    code, out, err = netsh_adv(["firewall", "delete", "rule",
-        "name=" + name])
-    return code == 0
-
-def import_rules(rules):
-    added, skipped = [], []
-    for r in rules:
-        rtype = str(r.get("type") or "v4tov4").strip().lower()
-        if rtype not in TYPES:
-            skipped.append(r); continue
-        la = str(r.get("listenAddress") or "").strip()
-        lp = str(r.get("listenPort") or "").strip()
-        ca = str(r.get("connectAddress") or "").strip()
-        cp = str(r.get("connectPort") or "").strip()
-        ok, _ = validate_port(lp)
-        if not ok:
-            skipped.append(r); continue
-        ok, _ = validate_ip(ca)
-        if not ok:
-            skipped.append(r); continue
-        la_norm = la if la else "0.0.0.0"
-        dup = False
-        for ex in list_rules():
-            exa = "0.0.0.0" if ex["listenAddress"] in ("", "*") else ex["listenAddress"]
-            if ex.get("type") == rtype and exa == la_norm and ex["listenPort"] == lp:
-                dup = True; break
-        if dup:
-            skipped.append(r); continue
-        try:
-            do_netsh("add", la, lp, ca, cp, rtype=rtype)
-            added.append(r)
-        except Exception:
-            skipped.append(r)
-    return added, skipped
-
-def is_admin():
-    try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
-        return None
-
-# ---- CSV parsing -------------------------------------------------------
-
-CSV_HEADER = ["type", "listenaddress", "listenport", "connectaddress", "connectport"]
-
-def parse_csv(text):
-    """Parse CSV text into a list of rule dicts. Returns (rules, errors)."""
-    rules = []
-    errors = []
-    reader = csv.reader(io.StringIO(text))
-    rows = list(reader)
-    if not rows:
-        return rules, [tr("csv_empty")]
-    header = [h.strip().lower() for h in rows[0]]
-    if header != CSV_HEADER:
-        return rules, [tr("csv_header_err")]
-    for i, row in enumerate(rows[1:], start=2):
-        if not row or all(c.strip() == "" for c in row):
-            continue
-        if len(row) < 5:
-            errors.append(tr("csv_field_err", i))
-            continue
-        rules.append({
-            "type": row[0].strip(),
-            "listenAddress": row[1].strip(),
-            "listenPort": row[2].strip(),
-            "connectAddress": row[3].strip(),
-            "connectPort": row[4].strip(),
-        })
-    return rules, errors
-
-# ---- WSL detection -----------------------------------------------------
-
-def detect_wsl():
-    """Detect WSL2 and return its IP."""
-    result = {"available": False, "wsl_ip": "", "host_ip": ""}
-    try:
-        r = subprocess.run(["wsl", "hostname", "-I"], capture_output=True, timeout=5)
-        if r.returncode == 0:
-            out = _decode(r.stdout).strip()
-            ips = out.split()
-            if ips:
-                wsl_ip = ips[0]
-                result["available"] = True
-                result["wsl_ip"] = wsl_ip
-                parts = wsl_ip.rsplit(".", 1)
-                if len(parts) == 2:
-                    result["host_ip"] = parts[0] + ".1"
-    except Exception:
-        pass
-    return result
-
-def relaunch_as_admin():
-    """Request UAC elevation and relaunch this script. Returns True if launched."""
-    try:
-        if getattr(sys, "frozen", False):
-            exe, params = sys.executable, ""
-        else:
-            exe = sys.executable
-            script = os.path.abspath(__file__)
-            params = '"%s"' % script if os.path.exists(script) else ""
-        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
-        return ret > 32
-    except Exception:
-        return False
-
-
-def validate_port(port_str):
-    """Validate port number. Returns (True, port_int) or (False, error_msg)."""
-    s = port_str.strip()
-    if not s:
-        return False, tr("msg_port_empty")
-    try:
-        p = int(s)
-    except ValueError:
-        return False, tr("msg_port_nan")
-    if p < 1 or p > 65535:
-        return False, tr("msg_port_range")
-    return True, p
-
-
-def validate_ip(ip_str):
-    """Validate IPv4 address. Returns (True, ip) or (False, error_msg)."""
-    s = ip_str.strip()
-    if s == "*":
-        return True, "*"
-    if not s:
-        return False, tr("msg_addr_empty")
-    parts = s.split(".")
-    if len(parts) != 4:
-        return False, tr("msg_addr_format")
-    for part in parts:
-        try:
-            n = int(part)
-        except ValueError:
-            return False, tr("msg_addr_nan")
-        if n < 0 or n > 255:
-            return False, tr("msg_addr_range")
-    return True, s
-
-
-def _friendly_error(raw):
-    """Translate netsh error messages."""
-    if not raw:
-        return tr("err_no_admin")
-    if "elevation" in raw.lower() or "提升" in raw:
-        return tr("err_need_admin")
-    if "already exists" in raw.lower() or "已存在" in raw:
-        return tr("err_exists")
-    if "not found" in raw.lower() or "找不到" in raw:
-        return tr("err_not_found")
-    if "parameter" in raw.lower():
-        return tr("err_param", raw.strip())
-    return raw.strip() or tr("err_generic")
-
-
 # ── theme system ────────────────────────────────────
 
 THEME_LIGHT = {
@@ -447,6 +170,7 @@ class PortProxyApp:
         self.check_admin()
         self._init_tray()
         self._init_startup_toggle()
+        self._detect_details = {}
 
     def _setup_styles(self):
         C = self.C
@@ -650,7 +374,7 @@ class PortProxyApp:
         exp_btn.pack(side="right", padx=(0, 8))
         tree_frame = tk.Frame(table_card, bg=C["card"])
         tree_frame.pack(fill="both", expand=True, padx=20, pady=(0, 16))
-        cols = ("listenAddr", "listenPort", "connectAddr", "connectPort", "protocol", "type", "actions")
+        cols = ("listenAddr", "listenPort", "connectAddr", "connectPort", "protocol", "type", "status", "actions")
         self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings",
                                   selectmode="browse", height=10)
         self.tree.heading("listenAddr", text=tr("col_listen_addr"))
@@ -659,14 +383,16 @@ class PortProxyApp:
         self.tree.heading("connectPort", text=tr("col_connect_port"))
         self.tree.heading("protocol", text=tr("col_protocol"))
         self.tree.heading("type", text=tr("col_type"))
+        self.tree.heading("status", text=tr("col_status"))
         self.tree.heading("actions", text=tr("col_actions"))
-        self.tree.column("listenAddr", width=180, anchor="w")
-        self.tree.column("listenPort", width=100, anchor="center")
-        self.tree.column("connectAddr", width=180, anchor="w")
-        self.tree.column("connectPort", width=100, anchor="center")
-        self.tree.column("protocol", width=70, anchor="center")
-        self.tree.column("type", width=80, anchor="center")
-        self.tree.column("actions", width=120, anchor="center")
+        self.tree.column("listenAddr", width=160, anchor="w")
+        self.tree.column("listenPort", width=80, anchor="center")
+        self.tree.column("connectAddr", width=160, anchor="w")
+        self.tree.column("connectPort", width=80, anchor="center")
+        self.tree.column("protocol", width=60, anchor="center")
+        self.tree.column("type", width=70, anchor="center")
+        self.tree.column("status", width=120, anchor="center")
+        self.tree.column("actions", width=100, anchor="center")
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -676,7 +402,9 @@ class PortProxyApp:
             bd=1, relief="solid")
         self.tree_menu.add_command(label=tr("ctx_edit"), command=self.edit_selected)
         self.tree_menu.add_command(label=tr("ctx_delete"), command=self.delete_selected)
+        self.tree_menu.add_command(label=tr("ctx_status_detail"), command=self._show_status_detail)
         self.tree.bind("<Button-3>", self._context_menu)
+        self.tree.bind("<Double-1>", self._show_status_detail)
         self.tree.bind("<Delete>", lambda e: self.delete_selected())
         self.tree.tag_configure("odd", background=C["card"])
         self.tree.tag_configure("even", background=C["row_alt"])
@@ -784,20 +512,76 @@ class PortProxyApp:
         self._set_status(tr("status_refreshing"))
         try:
             rules = list_rules()
-            self.tree.delete(*self.tree.get_children())
-            for i, r in enumerate(rules):
-                tag = "even" if i % 2 == 0 else "odd"
-                self.tree.insert("", "end", values=(
-                    "  " + r["listenAddress"], r["listenPort"],
-                    "  " + r["connectAddress"], r["connectPort"],
-                    "TCP", r.get("type", "v4tov4"),
-                    tr("actions_hint")
-                ), tags=(tag,))
-            count = len(rules)
-            self.rule_count_label.config(text="({})".format(count) if count else "")
-            self._set_status(tr("status_rules_count", count), "ok")
+            self._last_rules = rules
+            self._detect_details = {}
+            self._render_rules(rules, checking=True)
+            self.rule_count_label.config(
+                text="({})".format(len(rules)) if rules else "")
+            self._run_detect(rules)
         except Exception as e:
             self._set_status(tr("status_refresh_fail", str(e)), "err")
+
+    def _rule_key(self, r):
+        return (r["listenAddress"], r["listenPort"], r.get("type", "v4tov4"))
+
+    def _render_rules(self, rules, status_map=None, checking=False):
+        self.tree.delete(*self.tree.get_children())
+        for i, r in enumerate(rules):
+            tag = "even" if i % 2 == 0 else "odd"
+            if checking:
+                st, _color = tr("status_checking"), None
+            else:
+                st, _color = self._status_text(
+                    status_map.get(self._rule_key(r), {}) if status_map else {})
+            self.tree.insert("", "end", values=(
+                "  " + r["listenAddress"], r["listenPort"],
+                "  " + r["connectAddress"], r["connectPort"],
+                "TCP", r.get("type", "v4tov4"), st, tr("actions_hint")
+            ), tags=(tag,))
+        if not checking and status_map:
+            self._set_status(self._summary_status(status_map), "ok")
+
+    def _summary_status(self, status_map):
+        total = len(status_map)
+        ok = sum(1 for s in status_map.values() if s.get("status") == "ok")
+        return tr("status_rules_count", total) + " · " + tr("status_summary", ok, total - ok)
+
+    def _status_text(self, st):
+        if not isinstance(st, dict):
+            return tr("status_unknown"), "gray"
+        s = st.get("status")
+        if s == "ok":
+            return tr("status_ok"), self.C["success"]
+        if s == "backend_down":
+            return tr("status_backend_down"), "#f59e0b"
+        if s == "listen_error":
+            return tr("status_listen_error"), self.C["danger"]
+        return tr("status_unknown"), "gray"
+
+    def _run_detect(self, rules):
+        def work():
+            try:
+                status_map = check_rules(rules)
+            except Exception:
+                status_map = {}
+            self.root.after(0, lambda: self._on_detect_done(status_map))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_detect_done(self, status_map):
+        self._detect_details = status_map
+        self._render_rules(self._last_rules, status_map)
+
+    def _show_status_detail(self, event=None):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        values = self.tree.item(sel[0])["values"]
+        key = (values[0].strip(), values[1], values[5])
+        st = self._detect_details.get(key, {})
+        detail = st.get("detail") if isinstance(st, dict) else None
+        if not detail:
+            detail = tr("status_unknown")
+        messagebox.showinfo(tr("dlg_status_detail_title"), detail, parent=self.root)
 
     def add_rule(self):
         la = self.listen_addr.get().strip()
