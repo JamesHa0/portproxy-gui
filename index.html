@@ -93,6 +93,11 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--primary-light); }
 .arrow { color: var(--text-light); text-align: center; }
 .protocol-tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--primary-light); color: var(--primary); font-family: -apple-system, sans-serif; }
+.status-cell { cursor: pointer; text-align: center; font-family: -apple-system, sans-serif; font-size: 12px; font-weight: 600; }
+.status-ok { color: var(--success); }
+.status-backend_down { color: #f59e0b; }
+.status-listen_error { color: var(--danger); }
+.status-unknown { color: var(--text-light); }
 .btn-delete { background: var(--danger-light); color: var(--danger); border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; font-family: -apple-system, sans-serif; }
 .btn-delete:hover { background: var(--danger); color: white; }
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); }
@@ -265,8 +270,8 @@ tbody tr:hover { background: var(--primary-light); }
 <script>
 // ── i18n ──
 var I18N = {
-  zh: {app_title:"端口转发管理器",refresh:"刷新",elevate:"以管理员身份重启",add_rule:"添加转发规则",listen_addr:"监听地址",listen_port:"监听端口",connect_addr:"目标地址",connect_port:"目标端口",type:"类型",fw_allow:"放行防火墙入站",add:"添加",form_note:"仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。",current_rules:"当前规则",export:"导出",import:"导入",clear_all:"清空全部",cmd_log:"命令日志",clear_log:"清空",no_logs:"暂无日志",show_log:"显示日志面板",hide_log:"隐藏日志面板",cancel:"取消",admin_banner:"当前未以管理员身份运行，添加/删除规则可能失败。请右键"以管理员身份运行"启动本程序。",admin:"管理员",need_admin:"需管理员",rule_added:"规则添加成功",rule_deleted:"规则删除成功",cleared:"已清空所有规则",import_ok:"已导入",skipped:"跳过",dup_or_invalid:"重复或无效",export_ok:"已导出",rules_unit:"条规则",wsl_found:"检测到 WSL2",click_fill:"点击快速填充目标地址",wsl_not_found:"未检测到 WSL"},
-  en: {app_title:"Port Forwarding Manager",refresh:"Refresh",elevate:"Restart as Admin",add_rule:"Add Forwarding Rule",listen_addr:"Listen Address",listen_port:"Listen Port",connect_addr:"Target Address",connect_port:"Target Port",type:"Type",fw_allow:"Allow Firewall Inbound",add:"Add",form_note:"Only <strong>TCP</strong> protocol is supported. Four types: v4tov4 / v4tov6 / v6tov4 / v6tov6. Empty listen address defaults to 0.0.0.0.",current_rules:"Current Rules",export:"Export",import:"Import",clear_all:"Clear All",cmd_log:"Command Log",clear_log:"Clear",no_logs:"No logs yet",show_log:"Show Log Panel",hide_log:"Hide Log Panel",cancel:"Cancel",admin_banner:"Not running as Administrator. Add/delete operations may fail. Please right-click and 'Run as administrator'.",admin:"Admin",need_admin:"Need Admin",rule_added:"Rule added successfully",rule_deleted:"Rule deleted",cleared:"All rules cleared",import_ok:"Imported",skipped:"skipped",dup_or_invalid:"duplicate or invalid",export_ok:"Exported",rules_unit:"rules",wsl_found:"WSL2 detected",click_fill:"Click to fill target address",wsl_not_found:"WSL not detected"}
+  zh: {app_title:"端口转发管理器",refresh:"刷新",elevate:"以管理员身份重启",add_rule:"添加转发规则",listen_addr:"监听地址",listen_port:"监听端口",connect_addr:"目标地址",connect_port:"目标端口",type:"类型",fw_allow:"放行防火墙入站",add:"添加",form_note:"仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。",current_rules:"当前规则",export:"导出",import:"导入",clear_all:"清空全部",cmd_log:"命令日志",clear_log:"清空",no_logs:"暂无日志",show_log:"显示日志面板",hide_log:"隐藏日志面板",cancel:"取消",admin_banner:"当前未以管理员身份运行，添加/删除规则可能失败。请右键"以管理员身份运行"启动本程序。",admin:"管理员",need_admin:"需管理员",rule_added:"规则添加成功",rule_deleted:"规则删除成功",cleared:"已清空所有规则",import_ok:"已导入",skipped:"跳过",dup_or_invalid:"重复或无效",export_ok:"已导出",rules_unit:"条规则",wsl_found:"检测到 WSL2",click_fill:"点击快速填充目标地址",wsl_not_found:"未检测到 WSL",status:"状态",status_ok:"正常",status_backend_down:"后端不可达",status_listen_error:"监听异常",status_checking:"检测中...",status_unknown:"未知",status_detail:"端口状态详情",status_close:"关闭"},
+  en: {app_title:"Port Forwarding Manager",refresh:"Refresh",elevate:"Restart as Admin",add_rule:"Add Forwarding Rule",listen_addr:"Listen Address",listen_port:"Listen Port",connect_addr:"Target Address",connect_port:"Target Port",type:"Type",fw_allow:"Allow Firewall Inbound",add:"Add",form_note:"Only <strong>TCP</strong> protocol is supported. Four types: v4tov4 / v4tov6 / v6tov4 / v6tov6. Empty listen address defaults to 0.0.0.0.",current_rules:"Current Rules",export:"Export",import:"Import",clear_all:"Clear All",cmd_log:"Command Log",clear_log:"Clear",no_logs:"No logs yet",show_log:"Show Log Panel",hide_log:"Hide Log Panel",cancel:"Cancel",admin_banner:"Not running as Administrator. Add/delete operations may fail. Please right-click and 'Run as administrator'.",admin:"Admin",need_admin:"Need Admin",rule_added:"Rule added successfully",rule_deleted:"Rule deleted",cleared:"All rules cleared",import_ok:"Imported",skipped:"skipped",dup_or_invalid:"duplicate or invalid",export_ok:"Exported",rules_unit:"rules",wsl_found:"WSL2 detected",click_fill:"Click to fill target address",wsl_not_found:"WSL not detected",status:"Status",status_ok:"Normal",status_backend_down:"Backend Down",status_listen_error:"Listen Error",status_checking:"Checking...",status_unknown:"Unknown",status_detail:"Port Status Detail",status_close:"Close"}
 };
 var curLang = localStorage.getItem('pp-lang') || 'zh';
 function applyI18n() {
@@ -384,13 +389,47 @@ function renderRules(rules) {
   }
   count.innerHTML = '共 <strong>' + rules.length + '</strong> ' + tr('rules_unit');
   btnClear.style.display = 'inline-block';
-  var html = '<table><thead><tr><th>' + tr('listen_addr') + '</th><th>' + tr('listen_port') + '</th><th></th><th>' + tr('connect_addr') + '</th><th>' + tr('connect_port') + '</th><th>Protocol</th><th>' + tr('type') + '</th><th>Actions</th></tr></thead><tbody>';
+  var html = '<table><thead><tr><th>' + tr('listen_addr') + '</th><th>' + tr('listen_port') + '</th><th></th><th>' + tr('connect_addr') + '</th><th>' + tr('connect_port') + '</th><th>Protocol</th><th>' + tr('type') + '</th><th>' + tr('status') + '</th><th>Actions</th></tr></thead><tbody>';
+  _statusData = {};
   for (var i = 0; i < rules.length; i++) {
     var r = rules[i];
-    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type||'v4tov4')) + '</span></td><td><button class="btn-edit" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">Edit</button><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">Del</button></td></tr>';
+    var key = r.listenAddress + '|' + r.listenPort + '|' + (r.type||'v4tov4');
+    _statusData[key] = null;
+    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type||'v4tov4')) + '</span></td><td><span class="status-cell status-unknown" data-key="' + escAttr(key) + '" onclick="showStatusDetail(this)">' + tr('status_checking') + '</span></td><td><button class="btn-edit" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">Edit</button><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">Del</button></td></tr>';
   }
   html += '</tbody></table>';
   body.innerHTML = html;
+  // Start async status check
+  loadStatus();
+}
+
+var _statusData = {};
+function loadStatus() {
+  fetch('/api/check').then(function(r){return r.json();}).then(function(d){
+    if (!d.ok) return;
+    var cells = document.querySelectorAll('.status-cell');
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i];
+      var key = cell.getAttribute('data-key');
+      var st = d.status[key];
+      if (!st) continue;
+      _statusData[key] = st;
+      cell.className = 'status-cell status-' + escAttr(st.status);
+      var label = tr('status_' + st.status);
+      cell.textContent = label || tr('status_unknown');
+    }
+  }).catch(function(){});
+}
+function showStatusDetail(el) {
+  var key = el.getAttribute('data-key');
+  var st = _statusData[key];
+  var detail = (st && st.detail) ? st.detail : tr('status_unknown');
+  // simple modal via existing overlay
+  document.getElementById('modalTitle').textContent = tr('status_detail');
+  document.getElementById('modalText').innerHTML = '<pre style="white-space:pre-wrap;font-family:monospace;font-size:13px;line-height:1.6">' + esc(detail) + '</pre>';
+  document.getElementById('modalConfirm').textContent = tr('status_close');
+  document.getElementById('modalOverlay').classList.add('show');
+  pendingDelete = null; pendingClearAll = false;
 }
 
 function isValidPort(s) { if (!s) return false; if (!/^\d+$/.test(s)) return false; var p = parseInt(s,10); return p >= 1 && p <= 65535; }
@@ -437,6 +476,7 @@ function closeModal() { document.getElementById('modalOverlay').classList.remove
 
 document.getElementById('modalConfirm').addEventListener('click', function() {
   closeModal();
+  if (document.getElementById('modalConfirm').textContent === tr('status_close')) { return; }
   if (pendingDelete) {
     fetch('/api/rules/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({listenAddress: pendingDelete.addr, listenPort: pendingDelete.port, type: pendingDelete.type}) })
       .then(function(r) { return r.json(); })
