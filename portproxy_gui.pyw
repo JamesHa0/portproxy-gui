@@ -572,8 +572,10 @@ class PortProxyApp:
 
     def _on_detect_done(self, status_map):
         self._detect_details = status_map
-        self._render_rules(self._last_rules, status_map)
-        self._detect_running = False
+        try:
+            self._render_rules(self._last_rules, status_map)
+        finally:
+            self._detect_running = False
 
     def _show_status_detail(self, event=None):
         sel = self.tree.selection()
@@ -818,37 +820,8 @@ class PortProxyApp:
         self._dark = self._dark_var.get()
         _write_setting("Theme", "dark" if self._dark else "light")
         self.C = THEME_DARK if self._dark else THEME_LIGHT
-        self.root.configure(bg=self.C["bg"])
-        self._setup_styles()
-        self._repaint_colors()
-        self._build_menu()
-        self.refresh_rules()
-        self.check_admin()
+        self._rebuild_ui()
         self._set_status(tr("status_theme_dark") if self._dark else tr("status_theme_light"), "ok")
-
-    def _repaint_colors(self):
-        """Recursively update bg/fg on all tk widgets to match new theme."""
-        old_theme = THEME_LIGHT if self._dark else THEME_DARK
-        color_map = {}
-        for key in old_theme:
-            color_map[old_theme[key]] = self.C[key]
-
-        def walk(w):
-            for opt in ("bg", "fg", "activebackground", "activeforeground",
-                        "selectcolor", "highlightbackground", "highlightcolor",
-                        "insertbackground"):
-                try:
-                    val = w.cget(opt)
-                    if val and val in color_map:
-                        w.config(**{opt: color_map[val]})
-                except Exception:
-                    pass
-            for child in w.winfo_children():
-                walk(child)
-        walk(self.root)
-        if hasattr(self, "tree"):
-            self.tree.tag_configure("odd", background=self.C["card"])
-            self.tree.tag_configure("even", background=self.C["row_alt"])
 
     def _rebuild_ui(self):
         """Destroy and rebuild all widgets. Used for language switching."""
