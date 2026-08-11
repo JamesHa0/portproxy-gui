@@ -827,6 +827,7 @@ class PortProxyApp:
         """Destroy and rebuild all widgets. Used for language switching."""
         for widget in self.root.winfo_children():
             widget.destroy()
+        self._tray_menu_w = None  # invalidate cached tray menu (widgets just destroyed)
         self.root.configure(bg=self.C["bg"])
         self._setup_styles()
         self._build_menu()
@@ -860,6 +861,7 @@ class PortProxyApp:
 
     # ── system tray (ctypes Shell_NotifyIcon, no dependencies) ──
     def _init_tray(self):
+        self._remove_tray_icon()  # clean up any previous NIM_ADD to avoid ghost icons
         self.tray_icon = None
         self._minimize_to_tray = True
         self.root.bind("<Unmap>", self._on_unmap)
@@ -884,7 +886,7 @@ class PortProxyApp:
         self.tray_icon = nid
 
     def _remove_tray_icon(self):
-        if self.tray_icon is None:
+        if getattr(self, "tray_icon", None) is None:
             return
         ctypes.windll.shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self.tray_icon))
         self.tray_icon = None
@@ -930,7 +932,7 @@ class PortProxyApp:
         ctypes.windll.user32.SetWindowLongPtrW(hwnd, GWL_WNDPROC, self._wndproc_cb)
 
     def _tray_menu(self):
-        if not hasattr(self, "_tray_menu_w"):
+        if getattr(self, "_tray_menu_w", None) is None:
             m = tk.Menu(self.root, tearoff=0, font=FONT_UI)
             m.add_command(label=tr("tray_show"), command=self.show_from_tray)
             m.add_command(label=tr("tray_refresh"), command=self.refresh_rules)
