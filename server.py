@@ -2,7 +2,7 @@
 """PortProxy GUI - netsh portproxy graphical manager (web backend)"""
 
 import json, os, subprocess, threading, webbrowser, ctypes, sys, time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from portproxy_common import (
     TYPES, CMD_LOG, _log_cmd,
     netsh, list_rules, do_netsh, export_rules, import_rules,
@@ -213,7 +213,7 @@ def main():
     server = None
     for _ in range(20):
         try:
-            server = HTTPServer((HOST, PORT), Handler)
+            server = ThreadingHTTPServer((HOST, PORT), Handler)
             break
         except OSError:
             time.sleep(0.4)

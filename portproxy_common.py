@@ -7,6 +7,7 @@ WSL detection, firewall helpers, and admin detection.
 """
 
 import csv
+import ipaddress
 import io
 import os
 import re
@@ -197,17 +198,13 @@ def validate_ip(ip_str):
     s = (ip_str or "").strip()
     if s in ("", "*"):
         return True, s
-    parts = s.split(".")
-    if len(parts) != 4:
+    try:
+        addr = ipaddress.ip_address(s)
+        return True, addr.compressed if addr.version == 6 else str(addr)
+    except ValueError:
+        if ":" in s:
+            return False, tr("msg_addr_format6")
         return False, tr("msg_addr_format")
-    for part in parts:
-        try:
-            n = int(part)
-        except ValueError:
-            return False, tr("msg_addr_nan")
-        if n < 0 or n > 255:
-            return False, tr("msg_addr_range")
-    return True, s
 
 
 def _friendly_error(raw):
