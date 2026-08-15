@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -173,7 +173,7 @@ tbody tr:hover { background: var(--primary-light); }
       <div class="logo">&#128279;</div>
       <div>
         <h1 data-i18n="app_title">端口转发管理器</h1>
-        <div class="subtitle">基于 Windows netsh interface portproxy</div>
+        <div class="subtitle" data-i18n="subtitle">基于 Windows netsh interface portproxy</div>
         <span id="adminBadge" class="admin-badge" style="display:none"></span>
       </div>
     </div>
@@ -225,7 +225,9 @@ tbody tr:hover { background: var(--primary-light); }
       <div class="card-title" style="margin-bottom:0"><span class="dot"></span> <span data-i18n="current_rules">当前规则</span></div>
       <div style="display:flex;gap:10px;align-items:center">
         <span class="rules-count" id="rulesCount"></span>
+        <input type="text" id="ruleFilter" oninput="applyFilter()" placeholder="过滤..." style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);background:var(--card);width:150px;outline:none">
         <button class="btn-export" onclick="downloadExport()" data-i18n="export">导出</button>
+        <button class="btn-export" onclick="downloadExportCsv()">CSV</button>
         <button class="btn-import" onclick="document.getElementById('importFile').click()" data-i18n="import">导入</button>
         <input type="file" id="importFile" accept=".json,.csv,application/json,text/csv" style="display:none" onchange="importFile(this)">
         <button class="btn-clear-all" id="btnClearAll" onclick="confirmClearAll()" style="display:none" data-i18n="clear_all">清空全部</button>
@@ -270,8 +272,8 @@ tbody tr:hover { background: var(--primary-light); }
 <script>
 // ── i18n ──
 var I18N = {
-  zh: {app_title:"端口转发管理器",refresh:"刷新",elevate:"以管理员身份重启",add_rule:"添加转发规则",listen_addr:"监听地址",listen_port:"监听端口",connect_addr:"目标地址",connect_port:"目标端口",type:"类型",fw_allow:"放行防火墙入站",add:"添加",form_note:"仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。",current_rules:"当前规则",export:"导出",import:"导入",clear_all:"清空全部",cmd_log:"命令日志",clear_log:"清空",no_logs:"暂无日志",show_log:"显示日志面板",hide_log:"隐藏日志面板",cancel:"取消",admin_banner:"当前未以管理员身份运行，添加/删除规则可能失败。请右键"以管理员身份运行"启动本程序。",admin:"管理员",need_admin:"需管理员",rule_added:"规则添加成功",rule_deleted:"规则删除成功",cleared:"已清空所有规则",import_ok:"已导入",skipped:"跳过",dup_or_invalid:"重复或无效",export_ok:"已导出",rules_unit:"条规则",wsl_found:"检测到 WSL2",click_fill:"点击快速填充目标地址",wsl_not_found:"未检测到 WSL",status:"状态",status_ok:"正常",status_backend_down:"后端不可达",status_listen_error:"监听异常",status_checking:"检测中...",status_unknown:"未知",status_detail:"端口状态详情",status_close:"关闭"},
-  en: {app_title:"Port Forwarding Manager",refresh:"Refresh",elevate:"Restart as Admin",add_rule:"Add Forwarding Rule",listen_addr:"Listen Address",listen_port:"Listen Port",connect_addr:"Target Address",connect_port:"Target Port",type:"Type",fw_allow:"Allow Firewall Inbound",add:"Add",form_note:"Only <strong>TCP</strong> protocol is supported. Four types: v4tov4 / v4tov6 / v6tov4 / v6tov6. Empty listen address defaults to 0.0.0.0.",current_rules:"Current Rules",export:"Export",import:"Import",clear_all:"Clear All",cmd_log:"Command Log",clear_log:"Clear",no_logs:"No logs yet",show_log:"Show Log Panel",hide_log:"Hide Log Panel",cancel:"Cancel",admin_banner:"Not running as Administrator. Add/delete operations may fail. Please right-click and 'Run as administrator'.",admin:"Admin",need_admin:"Need Admin",rule_added:"Rule added successfully",rule_deleted:"Rule deleted",cleared:"All rules cleared",import_ok:"Imported",skipped:"skipped",dup_or_invalid:"duplicate or invalid",export_ok:"Exported",rules_unit:"rules",wsl_found:"WSL2 detected",click_fill:"Click to fill target address",wsl_not_found:"WSL not detected",status:"Status",status_ok:"Normal",status_backend_down:"Backend Down",status_listen_error:"Listen Error",status_checking:"Checking...",status_unknown:"Unknown",status_detail:"Port Status Detail",status_close:"Close"}
+  zh: {app_title:"端口转发管理器",subtitle:"基于 Windows netsh interface portproxy",refresh:"刷新",elevate:"以管理员身份重启",add_rule:"添加转发规则",listen_addr:"监听地址",listen_port:"监听端口",connect_addr:"目标地址",connect_port:"目标端口",type:"类型",fw_allow:"放行防火墙入站",add:"添加",form_note:"仅支持 <strong>TCP</strong> 协议，提供 v4tov4 / v4tov6 / v6tov4 / v6tov6 四种转发类型；监听地址留空默认为 0.0.0.0。",current_rules:"当前规则",export:"导出",import:"导入",clear_all:"清空全部",cmd_log:"命令日志",clear_log:"清空",no_logs:"暂无日志",show_log:"显示日志面板",hide_log:"隐藏日志面板",cancel:"取消",admin_banner:"当前未以管理员身份运行，添加/删除规则可能失败。请右键“以管理员身份运行”启动本程序。",admin:"管理员",need_admin:"需管理员",rule_added:"规则添加成功",rule_deleted:"规则删除成功",cleared:"已清空所有规则",import_ok:"已导入",skipped:"跳过",dup_or_invalid:"重复或无效",export_ok:"已导出",rules_unit:"条规则",wsl_found:"检测到 WSL2",click_fill:"点击快速填充目标地址",wsl_not_found:"未检测到 WSL",status:"状态",status_ok:"正常",status_backend_down:"后端不可达",status_listen_error:"监听异常",status_checking:"检测中...",status_unknown:"未知",status_detail:"端口状态详情",status_close:"关闭",protocol:"协议",actions:"操作",edit_btn:"编辑",del_btn:"删除",empty:"暂无转发规则",total:"共",loading:"加载中...",load_fail:"加载失败",network_error:"网络错误",invalid_addr:"地址格式错误",invalid_listen_addr:"监听地址格式错误",invalid_port:"端口范围 1-65535",confirm_delete:"确认删除",del_confirm_lead:"确定要删除规则",del_confirm_tail:" 吗？",confirm_clear:"确认清空",clear_confirm_msg:"确定要<strong>清空所有</strong>端口转发规则吗？此操作不可撤销。",restarting_admin:"正在以管理员身份重启...",edit_hint_prefix:"编辑模式：修改后点击“添加”将更新",failed:"失败",json_parse_err:"JSON 解析失败",import_failed:"导入失败",filter_ph:"过滤规则..."},
+  en: {app_title:"Port Forwarding Manager",subtitle:"Based on Windows netsh interface portproxy",refresh:"Refresh",elevate:"Restart as Admin",add_rule:"Add Forwarding Rule",listen_addr:"Listen Address",listen_port:"Listen Port",connect_addr:"Target Address",connect_port:"Target Port",type:"Type",fw_allow:"Allow Firewall Inbound",add:"Add",form_note:"Only <strong>TCP</strong> protocol is supported. Four types: v4tov4 / v4tov6 / v6tov4 / v6tov6. Empty listen address defaults to 0.0.0.0.",current_rules:"Current Rules",export:"Export",import:"Import",clear_all:"Clear All",cmd_log:"Command Log",clear_log:"Clear",no_logs:"No logs yet",show_log:"Show Log Panel",hide_log:"Hide Log Panel",cancel:"Cancel",admin_banner:"Not running as Administrator. Add/delete operations may fail. Please right-click and 'Run as administrator'.",admin:"Admin",need_admin:"Need Admin",rule_added:"Rule added successfully",rule_deleted:"Rule deleted",cleared:"All rules cleared",import_ok:"Imported",skipped:"skipped",dup_or_invalid:"duplicate or invalid",export_ok:"Exported",rules_unit:"rules",wsl_found:"WSL2 detected",click_fill:"Click to fill target address",wsl_not_found:"WSL not detected",status:"Status",status_ok:"Normal",status_backend_down:"Backend Down",status_listen_error:"Listen Error",status_checking:"Checking...",status_unknown:"Unknown",status_detail:"Port Status Detail",status_close:"Close",protocol:"Protocol",actions:"Actions",edit_btn:"Edit",del_btn:"Del",empty:"No forwarding rules",total:"Total",loading:"Loading...",load_fail:"Load failed",network_error:"Network error",invalid_addr:"Invalid address",invalid_listen_addr:"Invalid listen address",invalid_port:"Port range 1-65535",confirm_delete:"Confirm Delete",del_confirm_lead:"Delete rule",del_confirm_tail:" ?",confirm_clear:"Confirm Clear",clear_confirm_msg:"Clear <strong>ALL</strong> port forwarding rules? This cannot be undone.",restarting_admin:"Restarting as admin...",edit_hint_prefix:"Edit mode: click Add to update",failed:"Failed",json_parse_err:"JSON parse error",import_failed:"Import failed",filter_ph:"Filter rules..."}
 };
 var curLang = localStorage.getItem('pp-lang') || 'zh';
 function applyI18n() {
@@ -288,7 +290,12 @@ function toggleLang() {
   localStorage.setItem('pp-lang', curLang);
   applyI18n();
 }
-function tr(key) { return (I18N[curLang] || I18N.zh)[key] || key; }
+function tr(key) {
+  var s = (I18N[curLang] || I18N.zh)[key] || key;
+  for (var i = 1; i < arguments.length; i++) { s = s.replace('{}', arguments[i]); }
+  return s;
+}
+function postHeaders() { return {'Content-Type': 'application/json', 'X-PortProxy': '1'}; }
 
 // ── Theme ──
 function applyTheme(theme) {
@@ -328,7 +335,7 @@ function loadLogs() {
   }).catch(function(){});
 }
 function clearLogs() {
-  fetch('/api/logs/clear', {method:'POST'}).then(function(){ loadLogs(); });
+  fetch('/api/logs/clear', {method:'POST', headers: postHeaders()}).then(function(){ loadLogs(); });
 }
 
 // ── WSL Detection ──
@@ -352,15 +359,15 @@ var pendingClearAll = false;
 
 function loadRules() {
   var body = document.getElementById('rulesBody');
-  body.innerHTML = '<div class="loading"><span class="spinner"></span>加载中...</div>';
+  body.innerHTML = '<div class="loading"><span class="spinner"></span>' + tr('loading') + '</div>';
   fetch('/api/rules')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.ok) { renderRules(data.rules); updateAdmin(data.admin); }
-      else { body.innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div><p>' + esc(data.error || '加载失败') + '</p></div>'; }
+      else { body.innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div><p>' + esc(data.error || tr('load_fail')) + '</p></div>'; }
     })
     .catch(function(e) {
-      body.innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div><p>网络错误: ' + esc(e.message) + '</p></div>';
+      body.innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div><p>' + tr('network_error') + ': ' + esc(e.message) + '</p></div>';
     });
 }
 
@@ -379,45 +386,65 @@ function updateAdmin(isAdmin) {
     banner.style.display = 'flex';
   } else { badge.style.display = 'none'; banner.style.display = 'none'; }
 }
+var _statusData = {};
+var _allRules = [];
 function renderRules(rules) {
-  var body = document.getElementById('rulesBody');
+  _allRules = rules || [];
+  _statusData = {};
   var count = document.getElementById('rulesCount');
   var btnClear = document.getElementById('btnClearAll');
-  if (!rules || rules.length === 0) {
-    body.innerHTML = '<div class="empty-state"><div class="icon">&#128203;</div><p>暂无转发规则</p></div>';
+  if (_allRules.length === 0) {
+    document.getElementById('rulesBody').innerHTML = '<div class="empty-state"><div class="icon">&#128203;</div><p>' + tr('empty') + '</p></div>';
     count.textContent = ''; btnClear.style.display = 'none'; return;
   }
-  count.innerHTML = '共 <strong>' + rules.length + '</strong> ' + tr('rules_unit');
+  count.innerHTML = tr('total') + ' <strong>' + _allRules.length + '</strong> ' + tr('rules_unit');
   btnClear.style.display = 'inline-block';
-  var html = '<table><thead><tr><th>' + tr('listen_addr') + '</th><th>' + tr('listen_port') + '</th><th></th><th>' + tr('connect_addr') + '</th><th>' + tr('connect_port') + '</th><th>Protocol</th><th>' + tr('type') + '</th><th>' + tr('status') + '</th><th>Actions</th></tr></thead><tbody>';
-  _statusData = {};
-  for (var i = 0; i < rules.length; i++) {
-    var r = rules[i];
-    var key = r.listenAddress + '|' + r.listenPort + '|' + (r.type||'v4tov4');
-    _statusData[key] = null;
-    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol||'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type||'v4tov4')) + '</span></td><td><span class="status-cell status-unknown" data-key="' + escAttr(key) + '" onclick="showStatusDetail(this)">' + tr('status_checking') + '</span></td><td><button class="btn-edit" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">Edit</button><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type||'v4tov4') + '">Del</button></td></tr>';
-  }
-  html += '</tbody></table>';
-  body.innerHTML = html;
-  // Start async status check
+  renderTable();
   loadStatus();
 }
-
-var _statusData = {};
+function applyFilter() { renderTable(); }
+function renderTable() {
+  var q = (document.getElementById('ruleFilter').value || '').trim().toLowerCase();
+  var rules = _allRules;
+  if (q) {
+    rules = rules.filter(function(r) {
+      return (r.listenAddress || '').toLowerCase().indexOf(q) >= 0
+          || (r.listenPort || '').toLowerCase().indexOf(q) >= 0
+          || (r.connectAddress || '').toLowerCase().indexOf(q) >= 0
+          || (r.connectPort || '').toLowerCase().indexOf(q) >= 0
+          || (r.type || '').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  var html = '<table><thead><tr><th>' + tr('listen_addr') + '</th><th>' + tr('listen_port') + '</th><th></th><th>' + tr('connect_addr') + '</th><th>' + tr('connect_port') + '</th><th>' + tr('protocol') + '</th><th>' + tr('type') + '</th><th>' + tr('status') + '</th><th>' + tr('actions') + '</th></tr></thead><tbody>';
+  if (rules.length === 0) {
+    html += '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-light)">' + tr('empty') + '</td></tr>';
+  }
+  for (var i = 0; i < rules.length; i++) {
+    var r = rules[i];
+    var key = r.listenAddress + '|' + r.listenPort + '|' + (r.type || 'v4tov4');
+    html += '<tr><td>' + esc(r.listenAddress) + '</td><td>' + esc(r.listenPort) + '</td><td class="arrow">&rarr;</td><td>' + esc(r.connectAddress) + '</td><td>' + esc(r.connectPort) + '</td><td><span class="protocol-tag">' + esc((r.protocol || 'tcp').toUpperCase()) + '</span></td><td><span class="type-tag">' + esc((r.type || 'v4tov4')) + '</span></td><td><span class="status-cell status-unknown" data-key="' + escAttr(key) + '" onclick="showStatusDetail(this)">' + tr('status_checking') + '</span></td><td><button class="btn-edit" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type || 'v4tov4') + '" data-caddr="' + escAttr(r.connectAddress) + '" data-cport="' + escAttr(r.connectPort) + '">' + tr('edit_btn') + '</button><button class="btn-delete" data-addr="' + escAttr(r.listenAddress) + '" data-port="' + escAttr(r.listenPort) + '" data-type="' + escAttr(r.type || 'v4tov4') + '">' + tr('del_btn') + '</button></td></tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('rulesBody').innerHTML = html;
+  paintStatus();
+}
+function paintStatus() {
+  var cells = document.querySelectorAll('.status-cell');
+  for (var i = 0; i < cells.length; i++) {
+    var cell = cells[i];
+    var key = cell.getAttribute('data-key');
+    var st = _statusData[key];
+    if (!st) continue;
+    cell.className = 'status-cell status-' + escAttr(st.status);
+    var label = tr('status_' + st.status);
+    cell.textContent = label || tr('status_unknown');
+  }
+}
 function loadStatus() {
   fetch('/api/check').then(function(r){return r.json();}).then(function(d){
     if (!d.ok) return;
-    var cells = document.querySelectorAll('.status-cell');
-    for (var i = 0; i < cells.length; i++) {
-      var cell = cells[i];
-      var key = cell.getAttribute('data-key');
-      var st = d.status[key];
-      if (!st) continue;
-      _statusData[key] = st;
-      cell.className = 'status-cell status-' + escAttr(st.status);
-      var label = tr('status_' + st.status);
-      cell.textContent = label || tr('status_unknown');
-    }
+    for (var k in d.status) { _statusData[k] = d.status[k]; }
+    paintStatus();
   }).catch(function(){});
 }
 function showStatusDetail(el) {
@@ -433,7 +460,15 @@ function showStatusDetail(el) {
 }
 
 function isValidPort(s) { if (!s) return false; if (!/^\d+$/.test(s)) return false; var p = parseInt(s,10); return p >= 1 && p <= 65535; }
-function isValidAddr(s) { if (!s || s === '*') return true; var ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s); if (ip) { for (var i=1;i<=4;i++){if(parseInt(ip[i],10)>255)return false;} return true; } return /^[A-Za-z0-9.\-]+$/.test(s); }
+function isValidAddr(s) {
+  if (!s || s === '*') return true;
+  s = s.trim();
+  var ip4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (ip4) { for (var i = 1; i <= 4; i++) { if (parseInt(ip4[i], 10) > 255) return false; } return true; }
+  // IPv6 (lightweight; backend validates authoritatively)
+  if (s.indexOf(':') >= 0) { return /^[0-9a-fA-F:]+$/.test(s) && s.indexOf('::') === s.lastIndexOf('::'); }
+  return /^[A-Za-z0-9.\-]+$/.test(s);
+}
 
 function addRule() {
   var la = document.getElementById('listenAddress').value.trim();
@@ -441,35 +476,35 @@ function addRule() {
   var ca = document.getElementById('connectAddress').value.trim();
   var cp = document.getElementById('connectPort').value.trim();
   if (!lp) { showToast(tr('listen_port') + '!', 'error'); return; }
-  if (!isValidPort(lp)) { showToast('Port 1-65535', 'error'); return; }
+  if (!isValidPort(lp)) { showToast(tr('invalid_port'), 'error'); return; }
   if (!ca) { showToast(tr('connect_addr') + '!', 'error'); return; }
-  if (!isValidAddr(ca)) { showToast('Invalid address', 'error'); return; }
-  if (cp && !isValidPort(cp)) { showToast('Target port 1-65535', 'error'); return; }
-  if (la && !isValidAddr(la)) { showToast('Invalid listen address', 'error'); return; }
+  if (ca === '*' || !isValidAddr(ca)) { showToast(tr('invalid_addr'), 'error'); return; }
+  if (cp && !isValidPort(cp)) { showToast(tr('invalid_port'), 'error'); return; }
+  if (la && la !== '*' && !isValidAddr(la)) { showToast(tr('invalid_listen_addr'), 'error'); return; }
   var fw = document.getElementById('fwAllow').checked;
   var payload = {listenAddress: la||'0.0.0.0', listenPort: lp, connectAddress: ca, connectPort: cp, type: document.getElementById('ruleType').value, firewall: fw};
   if (editState) { payload.editType = editState.type; payload.editListenPort = editState.listenPort; payload.editListenAddress = editState.addr; }
-  fetch('/api/rules', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+  fetch('/api/rules', { method: 'POST', headers: postHeaders(), body: JSON.stringify(payload) })
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.ok) { showToast(tr('rule_added'), 'success'); cancelEdit(); loadRules(); }
-      else { showToast(data.error || 'Failed', 'error'); if (data.needAdmin) updateAdmin(false); }
+      else { showToast(data.error || tr('failed'), 'error'); if (data.needAdmin) updateAdmin(false); }
     })
-    .catch(function(e) { showToast('Network error: ' + e.message, 'error'); });
+    .catch(function(e) { showToast(tr('network_error') + ': ' + e.message, 'error'); });
 }
 
 function confirmDelete(addr, port, type) {
   pendingDelete = {addr: addr, port: port, type: type}; pendingClearAll = false;
-  document.getElementById('modalTitle').textContent = '确认删除';
-  document.getElementById('modalText').innerHTML = '确定要删除 <code>' + esc(addr) + ':' + esc(port) + '</code> 这条转发规则吗？';
-  document.getElementById('modalConfirm').textContent = '确认删除';
+  document.getElementById('modalTitle').textContent = tr('confirm_delete');
+  document.getElementById('modalText').innerHTML = tr('del_confirm_lead') + ' <code>' + esc(addr) + ':' + esc(port) + '</code>' + tr('del_confirm_tail');
+  document.getElementById('modalConfirm').textContent = tr('confirm_delete');
   document.getElementById('modalOverlay').classList.add('show');
 }
 function confirmClearAll() {
   pendingDelete = null; pendingClearAll = true;
-  document.getElementById('modalTitle').textContent = '确认清空';
-  document.getElementById('modalText').innerHTML = '确定要<strong>清空所有</strong>端口转发规则吗？此操作不可撤销。';
-  document.getElementById('modalConfirm').textContent = '确认清空';
+  document.getElementById('modalTitle').textContent = tr('confirm_clear');
+  document.getElementById('modalText').innerHTML = tr('clear_confirm_msg');
+  document.getElementById('modalConfirm').textContent = tr('confirm_clear');
   document.getElementById('modalOverlay').classList.add('show');
 }
 function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); pendingDelete = null; pendingClearAll = false; }
@@ -478,35 +513,37 @@ document.getElementById('modalConfirm').addEventListener('click', function() {
   closeModal();
   if (document.getElementById('modalConfirm').textContent === tr('status_close')) { return; }
   if (pendingDelete) {
-    fetch('/api/rules/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({listenAddress: pendingDelete.addr, listenPort: pendingDelete.port, type: pendingDelete.type}) })
+    fetch('/api/rules/delete', { method: 'POST', headers: postHeaders(), body: JSON.stringify({listenAddress: pendingDelete.addr, listenPort: pendingDelete.port, type: pendingDelete.type}) })
       .then(function(r) { return r.json(); })
-      .then(function(data) { if (data.ok) { showToast(tr('rule_deleted'), 'success'); loadRules(); } else { showToast(data.error || 'Failed', 'error'); } })
-      .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+      .then(function(data) { if (data.ok) { showToast(tr('rule_deleted'), 'success'); loadRules(); } else { showToast(data.error || tr('failed'), 'error'); } })
+      .catch(function(e) { showToast(tr('network_error') + ': ' + e.message, 'error'); });
     pendingDelete = null;
   } else if (pendingClearAll) {
-    fetch('/api/rules', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'clear'}) })
+    fetch('/api/rules', { method: 'POST', headers: postHeaders(), body: JSON.stringify({action: 'clear'}) })
       .then(function(r) { return r.json(); })
-      .then(function(data) { if (data.ok) { showToast(tr('cleared'), 'success'); loadRules(); } else { showToast(data.error || 'Failed', 'error'); } })
-      .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+      .then(function(data) { if (data.ok) { showToast(tr('cleared'), 'success'); loadRules(); } else { showToast(data.error || tr('failed'), 'error'); } })
+      .catch(function(e) { showToast(tr('network_error') + ': ' + e.message, 'error'); });
     pendingClearAll = false;
   }
 });
 
 function elevate() {
-  fetch('/api/elevate', {method:'POST'}).then(function(r){return r.json();}).then(function(d){
-    if (d.ok) { showToast('Restarting as admin...', 'success'); setTimeout(function(){ location.reload(); }, 1200); }
-    else { showToast(d.error || 'Failed', 'error'); }
-  }).catch(function(e){ showToast('Error: ' + e.message, 'error'); });
+  fetch('/api/elevate', {method:'POST', headers: postHeaders()}).then(function(r){return r.json();}).then(function(d){
+    if (d.ok) { showToast(tr('restarting_admin'), 'success'); setTimeout(function(){ location.reload(); }, 1200); }
+    else { showToast(d.error || tr('failed'), 'error'); }
+  }).catch(function(e){ showToast(tr('network_error') + ': ' + e.message, 'error'); });
 }
 
 var editState = null;
-function enterEdit(addr, port, type) {
+function enterEdit(addr, port, type, caddr, cport) {
   editState = {addr: addr, port: port, type: type};
   document.getElementById('listenAddress').value = (addr && addr !== '0.0.0.0') ? addr : '';
   document.getElementById('listenPort').value = port;
+  document.getElementById('connectAddress').value = caddr || '';
+  document.getElementById('connectPort').value = cport || '';
   document.getElementById('ruleType').value = type;
   var hint = document.getElementById('editHint');
-  hint.textContent = '编辑模式：修改后点击"添加"将更新 ' + addr + ':' + port + ' (' + type + ')';
+  hint.textContent = tr('edit_hint_prefix') + ' ' + addr + ':' + port + ' (' + type + ')';
   hint.classList.add('show');
   document.getElementById('listenPort').focus();
 }
@@ -521,13 +558,36 @@ function cancelEdit() {
 }
 function downloadExport() {
   fetch('/api/export').then(function(r){return r.json();}).then(function(data){
-    if (!data.ok) { showToast(data.error || 'Failed', 'error'); return; }
+    if (!data.ok) { showToast(data.error || tr('failed'), 'error'); return; }
     var blob = new Blob([JSON.stringify(data.rules, null, 2)], {type: 'application/json'});
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a'); a.href = url; a.download = 'portproxy-rules.json';
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     showToast(tr('export_ok') + ' ' + data.rules.length + ' ' + tr('rules_unit'), 'success');
-  }).catch(function(e){ showToast('Error: ' + e.message, 'error'); });
+  }).catch(function(e){ showToast(tr('network_error') + ': ' + e.message, 'error'); });
+}
+function csvCell(v) {
+  v = (v == null ? '' : String(v));
+  if (/[",\r\n]/.test(v)) { v = '"' + v.replace(/"/g, '""') + '"'; }
+  return v;
+}
+function downloadExportCsv() {
+  fetch('/api/export').then(function(r){return r.json();}).then(function(data){
+    if (!data.ok) { showToast(data.error || tr('failed'), 'error'); return; }
+    var rules = data.rules || [];
+    var lines = ['type,listenAddress,listenPort,connectAddress,connectPort'];
+    for (var i = 0; i < rules.length; i++) {
+      var r = rules[i];
+      lines.push([r.type || 'v4tov4', r.listenAddress || '', r.listenPort || '',
+                  r.connectAddress || '', r.connectPort || ''].map(csvCell).join(','));
+    }
+    var csv = '\uFEFF' + lines.join('\r\n');
+    var blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = 'portproxy-rules.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast(tr('export_ok') + ' ' + rules.length + ' ' + tr('rules_unit'), 'success');
+  }).catch(function(e){ showToast(tr('network_error') + ': ' + e.message, 'error'); });
 }
 function importFile(input) {
   if (!input.files || !input.files[0]) return;
@@ -541,19 +601,19 @@ function importFile(input) {
     } else {
       var rules;
       try { rules = JSON.parse(ev.target.result); }
-      catch (e) { showToast('JSON parse error: ' + e.message, 'error'); return; }
+      catch (e) { showToast(tr('json_parse_err') + ': ' + e.message, 'error'); return; }
       payload = {format: 'json', rules: rules};
     }
-    fetch('/api/import', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+    fetch('/api/import', { method: 'POST', headers: postHeaders(), body: JSON.stringify(payload) })
       .then(function(r){return r.json();})
       .then(function(data){
         if (data.ok) {
           var msg = tr('import_ok') + ' ' + data.added + ' ' + tr('rules_unit');
           if (data.skipped) msg += ', ' + tr('skipped') + ' ' + data.skipped + ' (' + tr('dup_or_invalid') + ')';
           showToast(msg, 'success'); loadRules();
-        } else { showToast(data.error || 'Import failed', 'error'); }
+        } else { showToast(data.error || tr('import_failed'), 'error'); }
       })
-      .catch(function(e){ showToast('Error: ' + e.message, 'error'); });
+      .catch(function(e){ showToast(tr('network_error') + ': ' + e.message, 'error'); });
   };
   reader.readAsText(file);
   input.value = '';
@@ -571,7 +631,7 @@ function escAttr(s) { return (s == null ? '' : String(s)).replace(/&/g,'&amp;').
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 document.getElementById('rulesBody').addEventListener('click', function(e) {
   var editBtn = e.target.closest ? e.target.closest('.btn-edit') : null;
-  if (editBtn) { enterEdit(editBtn.getAttribute('data-addr'), editBtn.getAttribute('data-port'), editBtn.getAttribute('data-type')); return; }
+  if (editBtn) { enterEdit(editBtn.getAttribute('data-addr'), editBtn.getAttribute('data-port'), editBtn.getAttribute('data-type'), editBtn.getAttribute('data-caddr'), editBtn.getAttribute('data-cport')); return; }
   var btn = e.target.closest ? e.target.closest('.btn-delete') : null;
   if (!btn) return;
   confirmDelete(btn.getAttribute('data-addr'), btn.getAttribute('data-port'), btn.getAttribute('data-type'));

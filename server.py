@@ -1,20 +1,41 @@
 #!/usr/bin/env python3
 """PortProxy GUI - netsh portproxy graphical manager (web backend)"""
 
-import json, os, subprocess, threading, webbrowser, ctypes, sys, time
+import argparse
+import json
+import os
+import sys
+import threading
+import time
+import webbrowser
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
 from portproxy_common import (
-    TYPES, CMD_LOG, _log_cmd,
-    netsh, list_rules, do_netsh, export_rules, import_rules,
-    validate_port, validate_ip, is_admin, _friendly_error,
+    TYPES, CMD_LOG, __version__,
+    list_rules, do_netsh, export_rules, import_rules,
+    validate_port, validate_ip, validate_connect_ip, is_admin,
     NetshError, detect_wsl, relaunch_as_admin,
-    netsh_adv, fw_open, fw_close, parse_csv, CSV_HEADER,
-    check_rules, check_single_rule,
+    fw_open, fw_close, fw_rule_name, fw_close_by_rule,
+    normalize_addr, find_duplicate, add_or_replace, clear_all_rules,
+    parse_csv,
+    check_rules,
 )
 
 HOST = "127.0.0.1"
 PORT = 8765
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MAX_BODY = 1024 * 1024  # 1 MB
+CSRF_HEADER = "X-PortProxy"
+CSRF_VALUE = "1"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"}
+
+
+class HttpError(Exception):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+        self.message = message
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -24,6 +45,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -36,17 +58,54 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _allowed_origins(self):
+        origins = {
+            "http://127.0.0.1:%d" % PORT,
+            "http://localhost:%d" % PORT,
+            "http://[::1]:%d" % PORT,
+        }
+        if HOST not in LOOPBACK_HOSTS:
+            if ":" in HOST:
+                origins.add("http://[%s]:%d" % (HOST, PORT))
+            else:
+                origins.add("http://%s:%d" % (HOST, PORT))
+        return origins
+
+    def _check_request_security(self):
+        """Reject cross-site (CSRF) and non-JSON POSTs on a localhost admin service."""
+        origin = self.headers.get("Origin")
+        if origin:
+            if origin.rstrip("/") not in self._allowed_origins():
+                raise HttpError(403, "拒绝跨站请求 (Origin 不被允许)")
+        ctype = (self.headers.get("Content-Type") or "").lower()
+        if "application/json" not in ctype:
+            raise HttpError(415, "Content-Type 必须为 application/json")
+        if self.headers.get(CSRF_HEADER) != CSRF_VALUE:
+            raise HttpError(403, "缺少 CSRF 校验头")
 
     def _body(self):
         try:
             n = int(self.headers.get("Content-Length", 0))
-            if n > 0:
-                return json.loads(self.rfile.read(n))
-        except Exception:
-            pass
-        return {}
+        except (TypeError, ValueError):
+            n = 0
+        if n <= 0:
+            return {}
+        if n > MAX_BODY:
+            raise HttpError(413, "请求体过大")
+        raw = self.rfile.read(n)
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except Exception as e:
+            raise HttpError(400, "JSON 解析失败: " + str(e))
+        return data if isinstance(data, dict) else {}
+
+    def do_OPTIONS(self):
+        # Cross-origin preflights are never allowed; same-origin needs none.
+        self._json({"error": "not allowed"}, 403)
 
     def do_GET(self):
         try:
@@ -62,32 +121,28 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/status":
                 self._json({"ok": True, "admin": is_admin()})
             elif self.path == "/api/logs":
-                self._json({"ok": True, "logs": CMD_LOG})
+                self._json({"ok": True, "logs": list(CMD_LOG)})
             elif self.path == "/api/wsl-detect":
                 self._json({"ok": True, **detect_wsl()})
             else:
                 self._json({"error": "not found"}, 404)
+        except HttpError as e:
+            self._json({"ok": False, "error": e.message}, e.status)
         except Exception as e:
-            self._json({"ok": False, "error": str(e)})
+            self._json({"ok": False, "error": str(e)}, 500)
 
     def do_POST(self):
         try:
+            self._check_request_security()
             data = self._body()
             if self.path == "/api/rules":
                 if data.get("action") == "clear":
                     try:
-                        rules = list_rules()
+                        count = clear_all_rules()
                     except Exception as e:
-                        return self._json({"ok": False, "error": str(e)}, 400)
-                    count = 0
-                    for r in rules:
-                        try:
-                            do_netsh("delete", r["listenAddress"], r["listenPort"])
-                            count += 1
-                        except Exception:
-                            pass
+                        return self._json({"ok": False, "error": str(e)}, 500)
                     return self._json({"ok": True, "message": "cleared", "count": count})
-                # add rule
+                # add / edit rule
                 rtype = str(data.get("type") or "v4tov4").strip().lower()
                 if rtype not in TYPES:
                     return self._json({"ok": False, "error": "不支持的转发类型: " + rtype}, 400)
@@ -99,7 +154,7 @@ class Handler(BaseHTTPRequestHandler):
                 ok, res = validate_port(lp)
                 if not ok:
                     return self._json({"ok": False, "error": res}, 400)
-                ok, res = validate_ip(ca)
+                ok, res = validate_connect_ip(ca)
                 if not ok:
                     return self._json({"ok": False, "error": "目标" + res}, 400)
                 if cp:
@@ -110,32 +165,28 @@ class Handler(BaseHTTPRequestHandler):
                     ok, res = validate_ip(la)
                     if not ok:
                         return self._json({"ok": False, "error": "监听" + res}, 400)
-                # parse edit state first (needed for duplicate check)
                 edit_type = str(data.get("editType") or "").strip().lower()
                 edit_lp = str(data.get("editListenPort") or "").strip()
                 edit_la = str(data.get("editListenAddress") or "").strip()
-                edit_la_norm = edit_la if edit_la else "0.0.0.0"
-                # duplicate check
-                la_norm = la if la else "0.0.0.0"
+                # duplicate check (exclude the rule currently being edited)
                 try:
                     existing = list_rules()
-                    for r in existing:
-                        ra = "0.0.0.0" if r["listenAddress"] in ("", "*") else r["listenAddress"]
-                        if r.get("type") == rtype and ra == la_norm and r["listenPort"] == lp and not (edit_type == rtype and ra == edit_la_norm and r["listenPort"] == edit_lp):
-                            return self._json(
-                                {"ok": False, "error": "该规则已存在 ({}:{})".format(la_norm, lp),
-                                 "duplicate": True}, 409)
+                    exclude = (edit_type, edit_la, edit_lp) if (edit_type and edit_lp) else None
+                    dup = find_duplicate(existing, rtype, la, lp, exclude=exclude)
                 except Exception:
-                    pass
-                if edit_type and edit_lp:
-                    try:
-                        do_netsh("delete", edit_la_norm, edit_lp, rtype=edit_type)
-                    except Exception:
-                        pass
+                    dup = None
+                if dup:
+                    return self._json(
+                        {"ok": False, "error": "该规则已存在 ({}:{})".format(normalize_addr(la), lp),
+                         "duplicate": True}, 409)
                 try:
-                    do_netsh("add", la, lp, ca, cp, rtype=rtype)
+                    old_rule = add_or_replace(la, lp, ca, cp, rtype,
+                                              edit_type=edit_type, edit_listen_addr=edit_la,
+                                              edit_listen_port=edit_lp)
                     if firewall:
-                        fw_open(lp, "PortProxy_%s_%s" % (rtype, lp))
+                        fw_open(lp, fw_rule_name(rtype, la, lp))
+                    if old_rule is not None:
+                        fw_close_by_rule(old_rule)
                 except NetshError as e:
                     return self._json({"ok": False, "error": e.message,
                                        "needAdmin": e.need_admin}, 400)
@@ -172,7 +223,7 @@ class Handler(BaseHTTPRequestHandler):
                 CMD_LOG.clear()
                 self._json({"ok": True, "message": "logs cleared"})
             elif self.path == "/api/elevate":
-                ok = relaunch_as_admin()
+                ok = relaunch_as_admin(__file__)
                 if ok:
                     self._json({"ok": True, "message": "elevating"})
                     threading.Timer(1.0, lambda: os._exit(0)).start()
@@ -182,7 +233,6 @@ class Handler(BaseHTTPRequestHandler):
                 rtype = str(data.get("type") or "v4tov4").strip().lower()
                 if rtype not in TYPES:
                     return self._json({"ok": False, "error": "不支持的转发类型: " + rtype}, 400)
-                firewall = bool(data.get("firewall"))
                 la = str(data.get("listenAddress") or "").strip()
                 lp = str(data.get("listenPort") or "").strip()
                 ok, res = validate_port(lp)
@@ -190,23 +240,39 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": res}, 400)
                 try:
                     do_netsh("delete", la, lp, rtype=rtype)
+                    try:
+                        fw_close(lp, fw_rule_name(rtype, la, lp))
+                    except Exception:
+                        pass
                 except NetshError as e:
                     return self._json({"ok": False, "error": e.message,
                                        "needAdmin": e.need_admin}, 400)
                 self._json({"ok": True, "message": "rule deleted"})
             else:
                 self._json({"error": "not found"}, 404)
+        except HttpError as e:
+            self._json({"ok": False, "error": e.message}, e.status)
         except Exception as e:
-            self._json({"ok": False, "error": str(e)})
+            self._json({"ok": False, "error": str(e)}, 500)
 
     def log_message(self, *args):
         pass
 
 
-def main():
+def main(argv=None):
+    global HOST, PORT
+    parser = argparse.ArgumentParser(description="PortProxy GUI web server")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="监听地址（默认 127.0.0.1；暴露到局域网/公网无内建鉴权，风险自负）")
+    parser.add_argument("--port", type=int, default=8765, help="监听端口（默认 8765）")
+    parser.add_argument("--no-browser", action="store_true", help="启动时不自动打开浏览器")
+    args = parser.parse_args(argv)
+    HOST = args.host
+    PORT = args.port
+
     if os.environ.get("PP_NO_ELEVATE") != "1" and not is_admin():
         try:
-            if relaunch_as_admin():
+            if relaunch_as_admin(__file__):
                 sys.exit(0)
         except Exception:
             pass
@@ -222,14 +288,17 @@ def main():
         sys.exit(1)
     admin = is_admin()
     print("=" * 50)
-    print("  PortProxy GUI - http://{}:{}".format(HOST, PORT))
+    print("  PortProxy GUI v%s - http://%s:%d" % (__version__, HOST, PORT))
     print("=" * 50)
     if admin:
         print("  Admin: YES - add/delete available.")
     else:
         print("  Admin: NO - run as Administrator for add/delete.")
+    if HOST not in LOOPBACK_HOSTS:
+        print("  WARNING: bound to non-loopback %s - no built-in auth, do not expose publicly!" % HOST)
     print("=" * 50)
-    threading.Timer(0.5, lambda: webbrowser.open("http://{}:{}".format(HOST, PORT))).start()
+    if not args.no_browser:
+        threading.Timer(0.5, lambda: webbrowser.open("http://{}:{}".format(HOST, PORT))).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

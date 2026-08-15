@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """PortProxy GUI - netsh portproxy desktop manager (tkinter)"""
 
-import os, re, subprocess, tempfile, tkinter as tk, ctypes, sys, json, csv, io
+import os
+import sys
+import json
+import ctypes
 import threading
+import tkinter as tk
 from tkinter import ttk, messagebox
-from datetime import datetime
+
 from i18n import tr, set_lang, get_lang
 from portproxy_common import (
-    TYPES, CMD_LOG, CMD_LOG_MAX, _log_cmd,
-    netsh, list_rules, do_netsh, export_rules, import_rules,
-    validate_port, validate_ip, is_admin, _friendly_error,
-    NetshError, detect_wsl, relaunch_as_admin,
-    netsh_adv, fw_open, fw_close, parse_csv, CSV_HEADER,
-    check_rules, check_single_rule,
+    TYPES, CMD_LOG, __version__,
+    list_rules, do_netsh, import_rules,
+    validate_port, validate_ip, validate_connect_ip, is_admin,
+    detect_wsl, relaunch_as_admin,
+    fw_open, fw_close, fw_rule_name, fw_close_by_rule,
+    find_duplicate, add_or_replace, clear_all_rules,
+    parse_csv, rules_to_csv_text,
+    check_rules,
 )
 
 # ---- system tray constants (ctypes Shell_NotifyIcon) ----
@@ -65,7 +71,10 @@ class NOTIFYICONDATA(ctypes.Structure):
     ]
 
 # ---- startup persistence (registry Run key, zero-dependency) ----
-import winreg
+try:
+    import winreg
+except Exception:
+    winreg = None
 
 APP_NAME = "PortProxyGUI"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -246,6 +255,12 @@ class PortProxyApp:
         self._dark_var = tk.BooleanVar(value=self._dark)
         settings_menu.add_checkbutton(label=tr("menu_dark"), variable=self._dark_var,
             command=self.toggle_theme, font=FONT_UI)
+        self.tray_close_var = tk.BooleanVar(value=_read_setting("TrayClose", "1") != "0")
+        settings_menu.add_checkbutton(label=tr("menu_tray_close"), variable=self.tray_close_var,
+            command=self.toggle_tray_close, font=FONT_UI)
+        self.tray_minimize_var = tk.BooleanVar(value=_read_setting("TrayMinimize", "1") != "0")
+        settings_menu.add_checkbutton(label=tr("menu_tray_minimize"), variable=self.tray_minimize_var,
+            command=self.toggle_tray_minimize, font=FONT_UI)
         settings_menu.add_command(label=tr("menu_tray"), command=self.hide_to_tray)
         settings_menu.add_separator()
         # Language submenu
@@ -357,6 +372,16 @@ class PortProxyApp:
         self.rule_count_label = tk.Label(table_header, text="",
             bg=C["card"], fg=C["primary"], font=FONT_H2)
         self.rule_count_label.pack(side="left", padx=(8, 0))
+        tk.Label(table_header, text=tr("filter_label"), bg=C["card"],
+                 fg=C["text_sec"], font=FONT_SMALL).pack(side="left", padx=(16, 4))
+        self.filter_var = tk.StringVar(value="")
+        filter_entry = tk.Entry(table_header, textvariable=self.filter_var, width=16,
+            font=FONT_UI, bg=C["entry_bg"], fg=C["text"], bd=1, relief="solid",
+            insertbackground=C["text"],
+            highlightbackground=C["border"], highlightcolor=C["primary"],
+            highlightthickness=1)
+        filter_entry.pack(side="left")
+        self.filter_var.trace_add("write", lambda *a: self._apply_filter())
         clear_btn = tk.Button(table_header, text=tr("clear_all"), command=self.clear_all,
             bg=C["card"], fg=C["danger"], font=FONT_UI,
             bd=1, relief="solid", activebackground=C["row_alt"],
@@ -506,23 +531,66 @@ class PortProxyApp:
         self.status.config(text=text, fg=colors.get(kind, C["text_sec"]))
         self.root.update_idletasks()
 
+    def _run_async(self, fn, on_done=None, on_error=None):
+        """Run *fn* in a background thread and marshal results back to the UI."""
+        def work():
+            try:
+                result = fn()
+            except Exception as e:
+                if on_error is not None:
+                    self.root.after(0, lambda: on_error(e))
+                return
+            if on_done is not None:
+                self.root.after(0, lambda: on_done(result))
+        threading.Thread(target=work, daemon=True).start()
+
     # ── actions ──────────────────────────────────────
 
     def refresh_rules(self):
         self._set_status(tr("status_refreshing"))
-        try:
-            rules = list_rules()
+
+        def work():
+            return list_rules()
+
+        def on_done(rules):
             self._last_rules = rules
             self._detect_details = {}
-            self._render_rules(rules, checking=True)
+            self._render_filtered(checking=True)
             self.rule_count_label.config(
                 text="({})".format(len(rules)) if rules else "")
             self._run_detect(rules)
-        except Exception as e:
+
+        def on_error(e):
             self._set_status(tr("status_refresh_fail", str(e)), "err")
+
+        self._run_async(work, on_done, on_error)
 
     def _rule_key(self, r):
         return (r["listenAddress"], r["listenPort"], r.get("type", "v4tov4"))
+
+    def _filtered(self, rules):
+        q = self.filter_var.get().strip().lower()
+        if not q:
+            return rules
+        out = []
+        for r in rules:
+            hay = " ".join(str(r.get(k, "")) for k in (
+                "listenAddress", "listenPort", "connectAddress", "connectPort", "type")).lower()
+            if q in hay:
+                out.append(r)
+        return out
+
+    def _render_filtered(self, checking=False):
+        rules = getattr(self, "_last_rules", [])
+        filtered = self._filtered(rules)
+        if checking:
+            self._render_rules(filtered, None, checking=True)
+        else:
+            status_map = getattr(self, "_detect_details", {}) or {}
+            self._render_rules(filtered, status_map, checking=False)
+
+    def _apply_filter(self):
+        self._render_filtered(checking=bool(getattr(self, "_detect_running", False)))
 
     def _render_rules(self, rules, status_map=None, checking=False):
         self.tree.delete(*self.tree.get_children())
@@ -573,7 +641,7 @@ class PortProxyApp:
     def _on_detect_done(self, status_map):
         self._detect_details = status_map
         try:
-            self._render_rules(self._last_rules, status_map)
+            self._render_filtered(checking=False)
         finally:
             self._detect_running = False
 
@@ -599,11 +667,6 @@ class PortProxyApp:
         edit_rtype = self.edit_var.get()
         edit_lp = self.edit_lp.get().strip()
         edit_la = self.edit_addr.get().strip()
-        if edit_rtype and edit_lp:
-            try:
-                do_netsh("delete", edit_la if edit_la else "0.0.0.0", edit_lp, rtype=edit_rtype)
-            except Exception:
-                pass
 
         # Validate listen port
         ok, result = validate_port(lp)
@@ -620,49 +683,61 @@ class PortProxyApp:
                 self.connect_port.focus()
                 return
 
-        # Validate IP addresses
+        # Validate listen address (empty / '*' allowed)
         if la:
             ok, result = validate_ip(la)
             if not ok:
                 messagebox.showwarning(tr("dlg_addr_err"), tr("msg_listen_prefix") + result, parent=self.root)
                 self.listen_addr.focus()
                 return
-        if not ca:
-            messagebox.showwarning(tr("dlg_hint"), tr("msg_input_target"), parent=self.root)
-            self.connect_addr.focus()
-            return
-        ok, result = validate_ip(ca)
+
+        # Validate connect address (required, non-wildcard IP)
+        ok, result = validate_connect_ip(ca)
         if not ok:
             messagebox.showwarning(tr("dlg_addr_err"), tr("msg_target_prefix") + result, parent=self.root)
             self.connect_addr.focus()
             return
 
-        # Check for duplicate
+        # Check for duplicate (exclude the rule currently being edited)
         try:
             existing = list_rules()
-            for r in existing:
-                editing_same = (edit_rtype and edit_lp and r.get("type") == edit_rtype and r["listenPort"] == edit_lp and (r["listenAddress"] == edit_la or edit_la == "0.0.0.0" or r["listenAddress"] == "0.0.0.0"))
-                if not editing_same and r.get("type") == rtype and r["listenPort"] == lp and (r["listenAddress"] == la or la == "0.0.0.0" or r["listenAddress"] == "0.0.0.0"):
-                    if not messagebox.askyesno(tr("dlg_dup_title"),
-                            tr("dlg_dup_msg", lp, r["listenAddress"], r["connectAddress"]),
-                            parent=self.root):
-                        return
+            exclude = (edit_rtype, edit_la, edit_lp) if (edit_rtype and edit_lp) else None
+            dup = find_duplicate(existing, rtype, la, lp, exclude=exclude)
         except Exception:
-            pass
+            dup = None
+        if dup:
+            if not messagebox.askyesno(tr("dlg_dup_title"),
+                    tr("dlg_dup_msg", lp, dup["listenAddress"], dup["connectAddress"]),
+                    parent=self.root):
+                return
 
         self._set_status(tr("status_adding"))
-        try:
-            do_netsh("add", la, lp, ca, cp, rtype=rtype)
+
+        def work():
+            old_rule = add_or_replace(la, lp, ca, cp, rtype,
+                                      edit_type=edit_rtype, edit_listen_addr=edit_la,
+                                      edit_listen_port=edit_lp)
             if firewall:
-                fw_open(lp, "PortProxy_%s_%s" % (rtype, lp))
+                fw_open(lp, fw_rule_name(rtype, la, lp))
+            if old_rule is not None:
+                fw_close_by_rule(old_rule)
+            return True
+
+        def on_done(_):
             self._set_status(tr("status_add_ok_fw") if firewall else tr("status_add_ok"), "ok")
+            self.edit_var.set("")
+            self.edit_lp.set("")
+            self.edit_addr.set("")
             self.listen_port.delete(0, "end")
             self.connect_addr.delete(0, "end")
             self.connect_port.delete(0, "end")
             self.refresh_rules()
-        except Exception as e:
+
+        def on_error(e):
             self._set_status(tr("status_add_fail", str(e)), "err")
             messagebox.showerror(tr("dlg_err_title"), tr("dlg_add_fail", str(e)), parent=self.root)
+
+        self._run_async(work, on_done, on_error)
 
     def delete_selected(self):
         sel = self.tree.selection()
@@ -676,30 +751,37 @@ class PortProxyApp:
                 tr("dlg_del_msg", addr, port), parent=self.root):
             return
         self._set_status(tr("status_deleting"))
-        try:
+
+        def work():
             do_netsh("delete", addr, port, rtype=rtype)
+            fw_close(port, fw_rule_name(rtype, addr, port))
+            return True
+
+        def on_done(_):
             self._set_status(tr("status_delete_ok"), "ok")
             self.refresh_rules()
-        except Exception as e:
+
+        def on_error(e):
             self._set_status(tr("status_delete_fail", str(e)), "err")
             messagebox.showerror(tr("dlg_err_title"), tr("dlg_del_fail", str(e)), parent=self.root)
+
+        self._run_async(work, on_done, on_error)
 
     def clear_all(self):
         if not messagebox.askyesno(tr("dlg_clear_title"),
                 tr("dlg_clear_msg"), parent=self.root):
             return
         self._set_status(tr("status_clearing"))
-        try:
-            for _t in TYPES:
-                try:
-                    do_netsh("delete", "", "", rtype=_t)
-                except Exception:
-                    pass
+
+        def on_done(_count):
             self._set_status(tr("status_clear_ok"), "ok")
             self.refresh_rules()
-        except Exception as e:
+
+        def on_error(e):
             self._set_status(tr("status_clear_fail", str(e)), "err")
             messagebox.showerror(tr("dlg_err_title"), tr("dlg_clear_fail", str(e)), parent=self.root)
+
+        self._run_async(clear_all_rules, on_done, on_error)
 
     def _context_menu(self, event):
         sel = self.tree.identify_row(event.y)
@@ -717,7 +799,7 @@ class PortProxyApp:
             self.elevate_btn.pack(side="right", padx=(0, 12))
 
     def elevate(self):
-        if relaunch_as_admin():
+        if relaunch_as_admin(__file__):
             self.root.destroy()
             sys.exit(0)
         messagebox.showwarning(tr("dlg_elevate_title"), tr("dlg_elevate_fail"), parent=self.root)
@@ -731,17 +813,23 @@ class PortProxyApp:
         values = self.tree.item(sel[0])["values"]
         addr = values[0].strip()
         port = values[1]
+        conn_addr = values[2].strip()
+        conn_port = values[3]
         rtype = values[5] if len(values) > 5 else "v4tov4"
         self.listen_addr.delete(0, "end")
         self.listen_addr.insert(0, addr if addr != "0.0.0.0" else "")
         self.listen_port.delete(0, "end")
         self.listen_port.insert(0, port)
         self.connect_addr.delete(0, "end")
+        self.connect_addr.insert(0, conn_addr)
         self.connect_port.delete(0, "end")
+        self.connect_port.insert(0, conn_port)
         self.rule_type.set(rtype)
         self.edit_var.set(rtype)
         self.edit_addr.set(addr if addr != "0.0.0.0" else "")
         self.edit_lp.set(port)
+        for w in (self.listen_addr, self.listen_port, self.connect_addr, self.connect_port):
+            w.config(fg=self.C["text"])
         self._set_status(tr("status_edit_mode"), "info")
         self.listen_port.focus()
 
@@ -756,12 +844,17 @@ class PortProxyApp:
             return
         from tkinter import filedialog
         path = filedialog.asksaveasfilename(defaultextension=".json",
-            filetypes=[(tr("export_filetype"), "*.json")], title=tr("export_title"))
+            filetypes=[(tr("export_filetype"), "*.json"), (tr("filetype_csv"), "*.csv")],
+            title=tr("export_title"))
         if not path:
             return
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(rules, f, ensure_ascii=False, indent=2)
+            if path.lower().endswith(".csv"):
+                with open(path, "w", encoding="utf-8-sig", newline="") as f:
+                    f.write(rules_to_csv_text(rules))
+            else:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(rules, f, ensure_ascii=False, indent=2)
             self._set_status(tr("status_export_ok", len(rules)), "ok")
         except Exception as e:
             messagebox.showerror(tr("dlg_err_title"), tr("dlg_export_fail", str(e)), parent=self.root)
@@ -813,7 +906,7 @@ class PortProxyApp:
         except Exception as e:
             messagebox.showerror(tr("dlg_err_title"), tr("dlg_import_fail", str(e)), parent=self.root)
     def show_about(self):
-        messagebox.showinfo(tr("dlg_about_title"), tr("dlg_about_msg"), parent=self.root)
+        messagebox.showinfo(tr("dlg_about_title"), tr("dlg_about_msg", __version__), parent=self.root)
 
     # ── theme toggle ──
     def toggle_theme(self):
@@ -863,7 +956,6 @@ class PortProxyApp:
     def _init_tray(self):
         self._remove_tray_icon()  # clean up any previous NIM_ADD to avoid ghost icons
         self.tray_icon = None
-        self._minimize_to_tray = True
         self.root.bind("<Unmap>", self._on_unmap)
 
     def _build_tray_icon(self):
@@ -882,7 +974,10 @@ class PortProxyApp:
         if not nid.hIcon:
             nid.hIcon = ctypes.windll.user32.LoadIconW(0, 32512)
         nid.szTip = tr("app_title")
-        ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+        ok = ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+        if not ok:
+            self.tray_icon = None
+            return
         self.tray_icon = nid
 
     def _remove_tray_icon(self):
@@ -892,7 +987,7 @@ class PortProxyApp:
         self.tray_icon = None
 
     def _on_unmap(self, event=None):
-        if getattr(self, "_minimize_to_tray", True):
+        if getattr(self, "tray_minimize_var", None) is None or self.tray_minimize_var.get():
             self._build_tray_icon()
             if self.tray_icon is not None:
                 self.root.withdraw()
@@ -907,11 +1002,13 @@ class PortProxyApp:
         self.root.lift()
         self.root.update_idletasks()
 
-    def toggle_tray(self):
-        if self.root.winfo_viewable():
-            self.hide_to_tray()
-        else:
-            self.show_from_tray()
+    def toggle_tray_close(self):
+        _write_setting("TrayClose", "1" if self.tray_close_var.get() else "0")
+        self._set_status(tr("status_tray_close_on") if self.tray_close_var.get() else tr("status_tray_close_off"), "ok")
+
+    def toggle_tray_minimize(self):
+        _write_setting("TrayMinimize", "1" if self.tray_minimize_var.get() else "0")
+        self._set_status(tr("status_tray_minimize_on") if self.tray_minimize_var.get() else tr("status_tray_minimize_off"), "ok")
 
     def _install_tray_wndproc(self):
         if getattr(self, "_wnd_subclassed", False):
@@ -945,6 +1042,9 @@ class PortProxyApp:
             pass
 
     def close_to_tray(self):
+        if getattr(self, "tray_close_var", None) is not None and not self.tray_close_var.get():
+            self.quit_app()
+            return
         if self.root.winfo_viewable():
             self.hide_to_tray()
         else:
@@ -983,7 +1083,7 @@ class PortProxyApp:
 def main():
     if os.environ.get("PP_NO_ELEVATE") != "1" and not is_admin():
         try:
-            if relaunch_as_admin():
+            if relaunch_as_admin(__file__):
                 sys.exit(0)
         except Exception:
             pass
