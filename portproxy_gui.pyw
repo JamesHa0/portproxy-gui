@@ -364,7 +364,7 @@ class PortProxyApp:
         self.tray_close_var = tk.BooleanVar(value=_read_setting("TrayClose", "1") != "0")
         settings_menu.add_checkbutton(label=tr("menu_tray_close"), variable=self.tray_close_var,
             command=self.toggle_tray_close, font=FONT_UI)
-        self.tray_minimize_var = tk.BooleanVar(value=_read_setting("TrayMinimize", "1") != "0")
+        self.tray_minimize_var = tk.BooleanVar(value=_read_setting("TrayMinimize", "0") != "0")
         settings_menu.add_checkbutton(label=tr("menu_tray_minimize"), variable=self.tray_minimize_var,
             command=self.toggle_tray_minimize, font=FONT_UI)
         settings_menu.add_command(label=tr("menu_tray"), command=self.hide_to_tray)
@@ -434,7 +434,6 @@ class PortProxyApp:
         form.pack(fill="x", padx=20, pady=(0, 16))
         self._field(form, tr("listen_addr"), 0, 0)
         self.listen_addr = self._entry(form, 0, 1, 18, "0.0.0.0")
-        self.listen_addr.insert(0, "0.0.0.0")
         tk.Label(form, text=":", bg=C["card"], fg=C["text_sec"],
                  font=("Segoe UI", 14, "bold")).grid(row=0, column=2, padx=(6, 6))
         self.listen_port = self._entry(form, 0, 3, 8, "8080")
