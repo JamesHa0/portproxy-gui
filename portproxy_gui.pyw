@@ -39,6 +39,8 @@ WM_TRAY_MSG = 0x0400 + 1001
 WM_LBUTTONUP = 0x0202
 WM_RBUTTONUP = 0x0205
 GWL_WNDPROC = -4
+WM_SYSCOMMAND = 0x0112
+SC_MINIMIZE = 0xF020
 
 # Correct 64-bit prototypes for window-proc subclassing (avoids access violations).
 try:
@@ -956,7 +958,6 @@ class PortProxyApp:
     def _init_tray(self):
         self._remove_tray_icon()  # clean up any previous NIM_ADD to avoid ghost icons
         self.tray_icon = None
-        self.root.bind("<Unmap>", self._on_unmap)
 
     def _build_tray_icon(self):
         if self.tray_icon is not None:
@@ -986,12 +987,6 @@ class PortProxyApp:
         ctypes.windll.shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self.tray_icon))
         self.tray_icon = None
 
-    def _on_unmap(self, event=None):
-        if getattr(self, "tray_minimize_var", None) is None or self.tray_minimize_var.get():
-            self._build_tray_icon()
-            if self.tray_icon is not None:
-                self.root.withdraw()
-
     def hide_to_tray(self):
         self._build_tray_icon()
         if self.tray_icon is not None:
@@ -999,7 +994,9 @@ class PortProxyApp:
 
     def show_from_tray(self):
         self.root.deiconify()
+        self.root.state("normal")
         self.root.lift()
+        self.root.focus_force()
         self.root.update_idletasks()
 
     def toggle_tray_close(self):
@@ -1018,6 +1015,13 @@ class PortProxyApp:
         old = ctypes.windll.user32.GetWindowLongPtrW(hwnd, GWL_WNDPROC)
         self._old_wndproc = old
         def wnd_proc(hwnd_, msg, wparam, lparam):
+            # Intercept minimize: hide to tray instead of iconifying, so the
+            # window never enters an iconic+withdrawn state that makes a later
+            # deiconify() fail to restore it.
+            if msg == WM_SYSCOMMAND and (int(wparam) & 0xFFF0) == SC_MINIMIZE:
+                if getattr(self, "tray_minimize_var", None) is None or self.tray_minimize_var.get():
+                    self.root.after(0, self.hide_to_tray)
+                    return 0
             if msg == WM_TRAY_MSG:
                 if lparam == WM_LBUTTONUP or lparam == WM_RBUTTONUP:
                     self.root.after(0, self._tray_menu)
