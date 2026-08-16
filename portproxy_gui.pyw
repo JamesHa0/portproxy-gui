@@ -38,6 +38,8 @@ NIM_MODIFY = 0x00000002
 WM_TRAY_MSG = 0x0400 + 1001
 WM_LBUTTONUP = 0x0202
 WM_RBUTTONUP = 0x0205
+WM_LBUTTONDBLCLK = 0x0203
+WM_RBUTTONDBLCLK = 0x0206
 GWL_WNDPROC = -4
 WM_SYSCOMMAND = 0x0112
 SC_MINIMIZE = 0xF020
@@ -1023,9 +1025,14 @@ class PortProxyApp:
                     self.root.after(0, self.hide_to_tray)
                     return 0
             if msg == WM_TRAY_MSG:
-                if lparam == WM_LBUTTONUP or lparam == WM_RBUTTONUP:
+                if lparam in (WM_LBUTTONUP, WM_LBUTTONDBLCLK):
+                    # Left click / double-click restores the window directly,
+                    # so a double-click can never hit the menu's "Quit" entry.
+                    self.root.after(0, self.show_from_tray)
+                    return 0
+                if lparam in (WM_RBUTTONUP, WM_RBUTTONDBLCLK):
                     self.root.after(0, self._tray_menu)
-                return 0
+                    return 0
             result = ctypes.windll.user32.CallWindowProcW(self._old_wndproc, hwnd_, msg, wparam, lparam)
             return int(result) if result is not None else 0
         # Return type must be pointer-sized (LONG_PTR), not 32-bit c_long.
