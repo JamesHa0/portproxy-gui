@@ -5,7 +5,9 @@ import os
 import sys
 import json
 import ctypes
+import queue
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -25,9 +27,11 @@ from portproxy_common import (
 try:
     user32 = ctypes.windll.user32
     shell32 = ctypes.windll.shell32
+    kernel32 = ctypes.windll.kernel32
 except Exception:
     user32 = None
     shell32 = None
+    kernel32 = None
 
 NIF_ICON = 0x00000002
 NIF_MESSAGE = 0x00000001
@@ -36,19 +40,50 @@ NIM_ADD = 0x00000000
 NIM_DELETE = 0x00000001
 NIM_MODIFY = 0x00000002
 WM_TRAY_MSG = 0x0400 + 1001
+WM_CLOSE = 0x0010
+PM_REMOVE = 0x0001
 WM_LBUTTONUP = 0x0202
 WM_RBUTTONUP = 0x0205
 WM_LBUTTONDBLCLK = 0x0203
 WM_RBUTTONDBLCLK = 0x0206
-GWL_WNDPROC = -4
-WM_SYSCOMMAND = 0x0112
-SC_MINIMIZE = 0xF020
 
 # Correct 64-bit prototypes for window-proc subclassing (avoids access violations).
 try:
     LONG_PTR = ctypes.c_int64
 except Exception:
     LONG_PTR = ctypes.c_long
+
+class MSG(ctypes.Structure):
+    _fields_ = [
+        ("hwnd", ctypes.c_void_p),
+        ("message", ctypes.c_uint),
+        ("wParam", ctypes.c_size_t),
+        ("lParam", ctypes.c_ssize_t),
+        ("time", ctypes.c_ulong),
+        ("pt", ctypes.c_long * 2),
+    ]
+
+class WNDCLASSW(ctypes.Structure):
+    _fields_ = [
+        ("style", ctypes.c_uint),
+        ("lpfnWndProc", ctypes.c_void_p),
+        ("cbClsExtra", ctypes.c_int),
+        ("cbWndExtra", ctypes.c_int),
+        ("hInstance", ctypes.c_void_p),
+        ("hIcon", ctypes.c_void_p),
+        ("hCursor", ctypes.c_void_p),
+        ("hbrBackground", ctypes.c_void_p),
+        ("lpszMenuName", ctypes.c_wchar_p),
+        ("lpszClassName", ctypes.c_wchar_p),
+    ]
+
+WNDPROC = ctypes.WINFUNCTYPE(
+    ctypes.c_ssize_t,
+    ctypes.c_void_p,
+    ctypes.c_uint,
+    ctypes.c_size_t,
+    ctypes.c_ssize_t,
+)
 
 def _proto(name, restype, argtypes):
     try:
@@ -59,9 +94,21 @@ def _proto(name, restype, argtypes):
         pass
 
 if user32 is not None:
-    _proto("GetWindowLongPtrW", ctypes.c_void_p, [ctypes.c_void_p, ctypes.c_int])
-    _proto("SetWindowLongPtrW", ctypes.c_void_p, [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p])
-    _proto("CallWindowProcW", ctypes.c_void_p, [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p])
+    _proto("RegisterClassW", ctypes.c_ushort, [ctypes.POINTER(WNDCLASSW)])
+    _proto("CreateWindowExW", ctypes.c_void_p, [
+        ctypes.c_ulong, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p])
+    _proto("DestroyWindow", ctypes.c_int, [ctypes.c_void_p])
+    _proto("PeekMessageW", ctypes.c_int, [
+        ctypes.POINTER(MSG), ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint])
+    _proto("TranslateMessage", ctypes.c_int, [ctypes.POINTER(MSG)])
+    _proto("DispatchMessageW", ctypes.c_ssize_t, [ctypes.POINTER(MSG)])
+    _proto("DefWindowProcW", ctypes.c_ssize_t, [
+        ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t])
+if kernel32 is not None:
+    kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+    kernel32.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
 
 class NOTIFYICONDATA(ctypes.Structure):
     _fields_ = [
@@ -159,6 +206,63 @@ FONT_SMALL   = ("Microsoft YaHei UI", 8)
 
 # ── GUI Application ──────────────────────────────────
 
+
+class TrayThread(threading.Thread):
+    """Hidden message window on its own thread; tray events go to a queue.
+
+    Why a separate thread: Tk's mainloop runs inside Tcl C code with the GIL
+    released; a ctypes window-proc callback invoked synchronously there
+    crashes with 'PyEval_RestoreThread: GIL must be held'. On this thread the
+    callback runs while the thread holds the GIL, so it is safe. Tk calls are
+    never made here — events are bridged via queue.Queue to the main thread.
+    """
+
+    def __init__(self):
+        super().__init__(name="tray-msg", daemon=True)
+        self.events = queue.Queue()
+        self.hwnd = None
+        self._ready = threading.Event()
+        self._stop = threading.Event()
+
+    def run(self):
+        hinst = kernel32.GetModuleHandleW(None)
+        wndproc = self._make_wndproc()
+        wc = WNDCLASSW()
+        wc.lpfnWndProc = ctypes.cast(wndproc, ctypes.c_void_p)
+        wc.hInstance = hinst
+        wc.lpszClassName = "PortProxyTrayWnd"
+        if not user32.RegisterClassW(ctypes.byref(wc)):
+            return
+        hwnd = user32.CreateWindowExW(
+            0, "PortProxyTrayWnd", "", 0,
+            0, 0, 0, 0, None, None, hinst, None)
+        if not hwnd:
+            return
+        self.hwnd = hwnd
+        self._ready.set()
+        msg = MSG()
+        while not self._stop.is_set():
+            while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+            time.sleep(0.05)  # releases GIL so the Tk main thread can run
+        user32.DestroyWindow(hwnd)
+        self.hwnd = None
+
+    def _make_wndproc(self):
+        @WNDPROC
+        def wnd_proc(hwnd_, msg, wparam, lparam):
+            if msg == WM_TRAY_MSG:
+                if lparam in (WM_LBUTTONUP, WM_LBUTTONDBLCLK):
+                    self.events.put("show")
+                elif lparam in (WM_RBUTTONUP, WM_RBUTTONDBLCLK):
+                    self.events.put("menu")
+                return 0
+            return user32.DefWindowProcW(hwnd_, msg, wparam, lparam)
+        self._wndproc = wnd_proc  # keep a reference so the callback is never GC'd
+        return wnd_proc
+
+
 class PortProxyApp:
     def __init__(self, root):
         self.root = root
@@ -182,6 +286,9 @@ class PortProxyApp:
         self.refresh_rules()
         self.check_admin()
         self._init_tray()
+        self._tray_thread = TrayThread()
+        self._tray_thread.start()
+        self.root.after(50, self._poll_tray_events)
         self._init_startup_toggle()
         self._detect_details = {}
         self._detect_running = False
@@ -520,6 +627,7 @@ class PortProxyApp:
 
     def _bind_keys(self):
         self.root.protocol("WM_DELETE_WINDOW", self.close_to_tray)
+        self.root.bind("<Unmap>", self._on_unmap)
         self.root.bind("<F5>", lambda e: self.refresh_rules())
         self.root.bind("<Control-r>", lambda e: self.refresh_rules())
         self.root.bind("<Control-l>", lambda e: self._toggle_log_shortcut())
@@ -964,18 +1072,16 @@ class PortProxyApp:
     def _build_tray_icon(self):
         if self.tray_icon is not None:
             return
+        if not self._tray_thread._ready.wait(2.0) or not self._tray_thread.hwnd:
+            self.tray_icon = None
+            return
         nid = NOTIFYICONDATA()
         nid.cbSize = ctypes.sizeof(NOTIFYICONDATA)
-        nid.hWnd = self.root.winfo_id()
+        nid.hWnd = self._tray_thread.hwnd
         nid.uID = 1
         nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP
         nid.uCallbackMessage = WM_TRAY_MSG
-        try:
-            nid.hIcon = ctypes.windll.user32.SendMessageW(self.root.winfo_id(), 0x007F, 2, 0)
-        except Exception:
-            nid.hIcon = 0
-        if not nid.hIcon:
-            nid.hIcon = ctypes.windll.user32.LoadIconW(0, 32512)
+        nid.hIcon = ctypes.windll.user32.LoadIconW(0, 32512)
         nid.szTip = tr("app_title")
         ok = ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
         if not ok:
@@ -1001,6 +1107,21 @@ class PortProxyApp:
         self.root.focus_force()
         self.root.update_idletasks()
 
+    def _handle_tray_event(self, evt):
+        if evt == "show":
+            self.show_from_tray()
+        elif evt == "menu":
+            self._tray_menu()
+
+    def _poll_tray_events(self):
+        try:
+            while True:
+                evt = self._tray_thread.events.get_nowait()
+                self._handle_tray_event(evt)
+        except queue.Empty:
+            pass
+        self.root.after(50, self._poll_tray_events)
+
     def toggle_tray_close(self):
         _write_setting("TrayClose", "1" if self.tray_close_var.get() else "0")
         self._set_status(tr("status_tray_close_on") if self.tray_close_var.get() else tr("status_tray_close_off"), "ok")
@@ -1009,35 +1130,16 @@ class PortProxyApp:
         _write_setting("TrayMinimize", "1" if self.tray_minimize_var.get() else "0")
         self._set_status(tr("status_tray_minimize_on") if self.tray_minimize_var.get() else tr("status_tray_minimize_off"), "ok")
 
-    def _install_tray_wndproc(self):
-        if getattr(self, "_wnd_subclassed", False):
+    def _on_unmap(self, event=None):
+        # Only a real minimize (iconic state) hides to tray; withdraw/destroy
+        # also emit <Unmap> and must be ignored to avoid recursion/ghost icons.
+        try:
+            if self.root.state() != "iconic":
+                return
+        except Exception:
             return
-        self._wnd_subclassed = True
-        hwnd = self.root.winfo_id()
-        old = ctypes.windll.user32.GetWindowLongPtrW(hwnd, GWL_WNDPROC)
-        self._old_wndproc = old
-        def wnd_proc(hwnd_, msg, wparam, lparam):
-            # Intercept minimize: hide to tray instead of iconifying, so the
-            # window never enters an iconic+withdrawn state that makes a later
-            # deiconify() fail to restore it.
-            if msg == WM_SYSCOMMAND and (int(wparam) & 0xFFF0) == SC_MINIMIZE:
-                if getattr(self, "tray_minimize_var", None) is None or self.tray_minimize_var.get():
-                    self.root.after(0, self.hide_to_tray)
-                    return 0
-            if msg == WM_TRAY_MSG:
-                if lparam in (WM_LBUTTONUP, WM_LBUTTONDBLCLK):
-                    # Left click / double-click restores the window directly,
-                    # so a double-click can never hit the menu's "Quit" entry.
-                    self.root.after(0, self.show_from_tray)
-                    return 0
-                if lparam in (WM_RBUTTONUP, WM_RBUTTONDBLCLK):
-                    self.root.after(0, self._tray_menu)
-                    return 0
-            result = ctypes.windll.user32.CallWindowProcW(self._old_wndproc, hwnd_, msg, wparam, lparam)
-            return int(result) if result is not None else 0
-        # Return type must be pointer-sized (LONG_PTR), not 32-bit c_long.
-        self._wndproc_cb = ctypes.WINFUNCTYPE(LONG_PTR, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p)(wnd_proc)
-        ctypes.windll.user32.SetWindowLongPtrW(hwnd, GWL_WNDPROC, self._wndproc_cb)
+        if getattr(self, "tray_minimize_var", None) is None or self.tray_minimize_var.get():
+            self.root.after(0, self.hide_to_tray)
 
     def _tray_menu(self):
         if getattr(self, "_tray_menu_w", None) is None:
@@ -1064,6 +1166,11 @@ class PortProxyApp:
     def quit_app(self):
         try:
             self._remove_tray_icon()
+        except Exception:
+            pass
+        try:
+            self._tray_thread._stop.set()
+            self._tray_thread.join(1.0)  # daemon, so worst case it dies with the process
         except Exception:
             pass
         self.root.destroy()
@@ -1100,7 +1207,6 @@ def main():
             pass
     root = tk.Tk()
     app = PortProxyApp(root)
-    app._install_tray_wndproc()
     root.mainloop()
 
 
