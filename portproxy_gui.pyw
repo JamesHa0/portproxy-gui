@@ -40,18 +40,11 @@ NIM_ADD = 0x00000000
 NIM_DELETE = 0x00000001
 NIM_MODIFY = 0x00000002
 WM_TRAY_MSG = 0x0400 + 1001
-WM_CLOSE = 0x0010
 PM_REMOVE = 0x0001
 WM_LBUTTONUP = 0x0202
 WM_RBUTTONUP = 0x0205
 WM_LBUTTONDBLCLK = 0x0203
 WM_RBUTTONDBLCLK = 0x0206
-
-# Correct 64-bit prototypes for window-proc subclassing (avoids access violations).
-try:
-    LONG_PTR = ctypes.c_int64
-except Exception:
-    LONG_PTR = ctypes.c_long
 
 class MSG(ctypes.Structure):
     _fields_ = [
@@ -232,11 +225,13 @@ class TrayThread(threading.Thread):
         wc.hInstance = hinst
         wc.lpszClassName = "PortProxyTrayWnd"
         if not user32.RegisterClassW(ctypes.byref(wc)):
+            print("tray: RegisterClassW failed", file=sys.stderr)
             return
         hwnd = user32.CreateWindowExW(
             0, "PortProxyTrayWnd", "", 0,
             0, 0, 0, 0, None, None, hinst, None)
         if not hwnd:
+            print("tray: CreateWindowExW failed", file=sys.stderr)
             return
         self.hwnd = hwnd
         self._ready.set()
