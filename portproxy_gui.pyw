@@ -332,6 +332,8 @@ class PortProxyApp:
         style.configure("TCombobox", fieldbackground=C["entry_bg"], foreground=C["text"],
             background=C["card"], bordercolor=C["border"])
         style.configure("TCheckbutton", background=C["card"], foreground=C["text_sec"], font=FONT_SMALL)
+        style.configure("Refresh.Horizontal.TProgressbar",
+            background=C["primary"], troughcolor=C["border"], borderwidth=0)
 
     def _build_menu(self):
         C = self.C
@@ -407,6 +409,8 @@ class PortProxyApp:
             bd=0, activebackground=C["border"], activeforeground=C["header_fg"],
             cursor="hand2", padx=14, pady=4)
         refresh_btn.pack(side="right")
+        self._refresh_bar = ttk.Progressbar(inner, mode="indeterminate",
+            style="Refresh.Horizontal.TProgressbar", length=90)
 
         self.admin_label = tk.Label(inner, text="", bg=C["header_bg"], fg=C["text_sec"], font=FONT_UI)
         self.admin_label.pack(side="right", padx=(0, 12))
@@ -637,6 +641,14 @@ class PortProxyApp:
         self.status.config(text=text, fg=colors.get(kind, C["text_sec"]))
         self.root.update_idletasks()
 
+    def _refresh_bar_show(self):
+        self._refresh_bar.pack(side="right", before=self.admin_label, padx=(10, 0))
+        self._refresh_bar.start(12)
+
+    def _refresh_bar_hide(self):
+        self._refresh_bar.stop()
+        self._refresh_bar.pack_forget()
+
     def _run_async(self, fn, on_done=None, on_error=None):
         """Run *fn* in a background thread and marshal results back to the UI."""
         def work():
@@ -654,6 +666,7 @@ class PortProxyApp:
 
     def refresh_rules(self):
         self._set_status(tr("status_refreshing"))
+        self._refresh_bar_show()
 
         def work():
             return list_rules()
@@ -668,6 +681,7 @@ class PortProxyApp:
 
         def on_error(e):
             self._set_status(tr("status_refresh_fail", str(e)), "err")
+            self._refresh_bar_hide()
 
         self._run_async(work, on_done, on_error)
 
@@ -750,6 +764,7 @@ class PortProxyApp:
             self._render_filtered(checking=False)
         finally:
             self._detect_running = False
+            self._refresh_bar_hide()
 
     def _show_status_detail(self, event=None):
         sel = self.tree.selection()
