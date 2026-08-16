@@ -77,6 +77,7 @@ def netsh(args: List[str]) -> Tuple[int, str, str]:
             ["netsh", "interface", "portproxy"] + args,
             capture_output=True,
             timeout=60,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         out = _decode(r.stdout)
         err = _decode(r.stderr)
@@ -103,6 +104,7 @@ def _netsh_file(args):
                 stdout=f,
                 stderr=subprocess.STDOUT,
                 timeout=60,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
         with open(tmp, "rb") as f:
             output = _decode(f.read())
@@ -435,7 +437,8 @@ def netsh_adv(args: List[str]) -> Tuple[int, str, str]:
     """Run a netsh advfirewall command."""
     cmd_str = "netsh advfirewall " + " ".join(args)
     try:
-        r = subprocess.run(["netsh", "advfirewall"] + args, capture_output=True, timeout=60)
+        r = subprocess.run(["netsh", "advfirewall"] + args, capture_output=True, timeout=60,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
         out, err = _decode(r.stdout), _decode(r.stderr)
         _log_cmd(cmd_str, r.returncode, out, err)
         return r.returncode, out, err
@@ -491,7 +494,8 @@ def detect_wsl() -> Dict[str, Any]:
     """Detect WSL2 and return its IP.  Returns dict with available/wsl_ip/host_ip."""
     result = {"available": False, "wsl_ip": "", "host_ip": ""}
     try:
-        r = subprocess.run(["wsl", "hostname", "-I"], capture_output=True, timeout=5)
+        r = subprocess.run(["wsl", "hostname", "-I"], capture_output=True, timeout=5,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
         if r.returncode == 0:
             out = _decode(r.stdout).strip()
             ips = out.split()
@@ -563,7 +567,8 @@ def _get_iphlpsvc_pid():
         return _IPHLPSVC_PID if _IPHLPSVC_PID else None
     _IPHLPSVC_PID_TS = now
     try:
-        r = subprocess.run(["sc", "queryex", "iphlpsvc"], capture_output=True, timeout=10)
+        r = subprocess.run(["sc", "queryex", "iphlpsvc"], capture_output=True, timeout=10,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
         out = _decode(r.stdout)
         m = re.search(r"PID\s*:\s*(\d+)", out)
         _IPHLPSVC_PID = int(m.group(1)) if m else False
@@ -576,7 +581,8 @@ def _pid_name(pid):
     """Return the process name for a PID (e.g. 'nginx.exe')."""
     try:
         r = subprocess.run(["tasklist", "/FI", "PID eq " + str(pid), "/FO", "CSV", "/NH"],
-                           capture_output=True, timeout=5)
+                           capture_output=True, timeout=5,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
         line = _decode(r.stdout).strip()
         if line:
             parts = line.split(",")
@@ -627,7 +633,8 @@ def parse_netstat_listen(output):
 
 def _run_netstat(timeout=5.0):
     try:
-        r = subprocess.run(["netstat", "-ano"], capture_output=True, timeout=timeout)
+        r = subprocess.run(["netstat", "-ano"], capture_output=True, timeout=timeout,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
         return _decode(r.stdout)
     except Exception:
         return ""
