@@ -19,14 +19,14 @@
 
 ## 两种界面
 
-- **桌面版（推荐）**：运行 `portproxy_gui.pyw`（Tkinter），或双击 `run.bat` 启动已构建的 `dist/PortProxy.exe`
+- **桌面版（推荐）**：运行 `portproxy_gui.pyw`（Tkinter），或双击 `run.bat` —— 自动检测 `dist\PortProxy.exe`：存在则启动构建版，否则回退从源码启动
 - **Web 版**：运行 `python server.py`，浏览器打开 http://127.0.0.1:8765；可选参数 `--host` / `--port` / `--no-browser`
 
 > **安全说明**：Web 版默认仅监听 `127.0.0.1`，并校验请求来源（Origin）、`Content-Type` 与 CSRF 请求头以阻止恶意网页跨站调用。`--host` 若暴露到局域网/公网将无内建鉴权，风险自负。
 
 ## 快速开始（桌面版）
 
-1. 从 [Releases](https://github.com/JamesHa0/portproxy-gui/releases) 下载 `PortProxy.exe`，或直接双击仓库内的 `run.bat`
+1. 直接双击仓库内的 `run.bat`（已构建 `dist\PortProxy.exe` 则启动构建版，否则自动回退从源码运行）；或从 [Releases](https://github.com/JamesHa0/portproxy-gui/releases) 下载 `PortProxy.exe` 直接运行
 2. 首次运行会请求管理员（UAC）权限 —— 端口转发必须由 netsh 以管理员身份执行
 3. 在表单中填写 监听地址 / 监听端口 / 目标地址 / 目标端口，选择转发类型，点击"添加"
 4. 表格实时刷新；右键行可编辑 / 删除，顶部按钮可清空全部、导入 / 导出 JSON
@@ -38,6 +38,7 @@
 - Windows 系统
 - 端口转发需要管理员权限：程序会自动请求 UAC 提权；若被组策略禁止，请右键"以管理员身份运行"
 - 仅支持 TCP（netsh portproxy 的限制）
+- 从源码启动需已安装 Python 3.8+（`run.bat` 在未构建 exe 时会自动回退到源码启动）
 
 ## 从源码构建（桌面版 EXE）
 
