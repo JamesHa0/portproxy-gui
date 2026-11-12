@@ -774,7 +774,8 @@ class PortProxyApp:
         if not sel:
             return
         values = self.tree.item(sel[0])["values"]
-        key = (values[0].strip(), values[1], values[5])
+        # Treeview 把纯数字值读回为 int（如 8300），键统一按字符串比较
+        key = (str(values[0]).strip(), str(values[1]), str(values[5]))
         st = self._detect_details.get(key, {})
         detail = st.get("detail") if isinstance(st, dict) else None
         if not detail:
@@ -869,8 +870,8 @@ class PortProxyApp:
             messagebox.showwarning(tr("dlg_hint"), tr("msg_select_rule"), parent=self.root)
             return
         values = self.tree.item(sel[0])["values"]
-        addr, port = values[0].strip(), values[1]
-        rtype = values[5] if len(values) > 5 else "v4tov4"
+        addr, port = str(values[0]).strip(), str(values[1])
+        rtype = str(values[5]) if len(values) > 5 else "v4tov4"
         if not messagebox.askyesno(tr("dlg_del_title"),
                 tr("dlg_del_msg", addr, port), parent=self.root):
             return
@@ -935,11 +936,11 @@ class PortProxyApp:
             messagebox.showwarning(tr("dlg_hint"), tr("msg_select_rule"), parent=self.root)
             return
         values = self.tree.item(sel[0])["values"]
-        addr = values[0].strip()
-        port = values[1]
-        conn_addr = values[2].strip()
-        conn_port = values[3]
-        rtype = values[5] if len(values) > 5 else "v4tov4"
+        addr = str(values[0]).strip()
+        port = str(values[1])
+        conn_addr = str(values[2]).strip()
+        conn_port = str(values[3])
+        rtype = str(values[5]) if len(values) > 5 else "v4tov4"
         self.listen_addr.delete(0, "end")
         self.listen_addr.insert(0, addr if addr != "0.0.0.0" else "")
         self.listen_port.delete(0, "end")
