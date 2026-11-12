@@ -97,8 +97,9 @@ def _netsh_file(args):
     tmp = None
     try:
         fd, tmp = tempfile.mkstemp(prefix="portproxy_netsh_", suffix=".txt")
-        os.close(fd)
-        with open(tmp, "wb") as f:
+        # 全程复用 mkstemp 返回的句柄（w+b 读写），不关闭后按路径重开，
+        # 消除临时文件被替换的 TOCTOU 窗口
+        with os.fdopen(fd, "w+b") as f:
             r = subprocess.run(
                 ["netsh", "interface", "portproxy"] + args,
                 stdout=f,
@@ -106,7 +107,7 @@ def _netsh_file(args):
                 timeout=60,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-        with open(tmp, "rb") as f:
+            f.seek(0)
             output = _decode(f.read())
         _log_cmd("netsh interface portproxy " + " ".join(args), r.returncode, output, "")
         return r.returncode, output, ""

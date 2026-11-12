@@ -10,6 +10,7 @@ dist/
 # 项目计划（仅本地使用）
 PLAN.md
 .hermes/
+.mimosa/
 
 # 操作系统
 Thumbs.db
