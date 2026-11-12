@@ -436,28 +436,29 @@ class PortProxyApp:
                  fg=C["text"], font=FONT_H2).pack(side="left")
         form = tk.Frame(add_card, bg=C["card"])
         form.pack(fill="x", padx=20, pady=(0, 16))
-        self._field(form, tr("listen_addr"), 0, 0)
-        self.listen_addr = self._entry(form, 0, 1, 18, "0.0.0.0")
-        tk.Label(form, text=":", bg=C["card"], fg=C["text_sec"],
-                 font=("Segoe UI", 14, "bold")).grid(row=0, column=2, padx=(6, 6))
-        self.listen_port = self._entry(form, 0, 3, 8, "8080")
-        tk.Label(form, text="→", bg=C["card"], fg=C["text_sec"],
-                 font=("Segoe UI", 14)).grid(row=0, column=4, padx=(10, 10))
-        self._field(form, tr("connect_addr"), 0, 5)
-        self.connect_addr = self._entry(form, 0, 6, 18, "192.168.1.100")
-        tk.Label(form, text=":", bg=C["card"], fg=C["text_sec"],
-                 font=("Segoe UI", 14, "bold")).grid(row=0, column=7, padx=(6, 6))
-        self.connect_port = self._entry(form, 0, 8, 8, "80")
-        tk.Label(form, text=tr("type_label"), bg=C["card"], fg=C["text_sec"], font=FONT_SMALL).grid(row=0, column=9, padx=(16, 4))
+        # 分组式表单（与 web 版一致）：每组"标签在上、输入框在下"横向排列；
+        # 地址列 weight=1 随窗口伸缩，操作行复选框靠左、按钮靠右，窄窗口不遮挡。
+        form.grid_columnconfigure(0, weight=1)
+        form.grid_columnconfigure(2, weight=1)
+        self._field(form, tr("listen_addr"), 0, 0, padx=(0, 14))
+        self.listen_addr = self._entry(form, 1, 0, 14, "0.0.0.0", stretch=True, padx=(0, 14))
+        self._field(form, tr("listen_port"), 0, 1, padx=(0, 14))
+        self.listen_port = self._entry(form, 1, 1, 7, "8080", padx=(0, 14))
+        self._field(form, tr("connect_addr"), 0, 2, padx=(0, 14))
+        self.connect_addr = self._entry(form, 1, 2, 14, "192.168.1.100", stretch=True, padx=(0, 14))
+        self._field(form, tr("connect_port"), 0, 3, padx=(0, 14))
+        self.connect_port = self._entry(form, 1, 3, 7, "80", padx=(0, 14))
+        self._field(form, tr("type_label"), 0, 4)
         self.rule_type = tk.StringVar(value="v4tov4")
         type_combo = ttk.Combobox(form, textvariable=self.rule_type, state="readonly",
             values=list(TYPES), width=9, font=FONT_UI)
-        type_combo.grid(row=0, column=10, padx=(0, 8))
+        type_combo.grid(row=1, column=4, sticky="w")
+        # 操作行
         self.fw_var = tk.BooleanVar(value=False)
         fw_chk = tk.Checkbutton(form, text=tr("fw_allow"), variable=self.fw_var,
             bg=C["card"], fg=C["text_sec"], font=FONT_SMALL, cursor="hand2",
             activebackground=C["card"], selectcolor=C["card"])
-        fw_chk.grid(row=0, column=11, padx=(4, 8))
+        fw_chk.grid(row=2, column=0, sticky="w", pady=(12, 0))
         self.edit_var = tk.StringVar(value="")
         self.edit_lp = tk.StringVar(value="")
         self.edit_addr = tk.StringVar(value="")
@@ -465,7 +466,7 @@ class PortProxyApp:
             bg=C["primary"], fg="#ffffff", font=("Microsoft YaHei UI", 10, "bold"),
             bd=0, activebackground=C["primary_h"], activeforeground="#ffffff",
             cursor="hand2", padx=20, pady=7)
-        add_btn.grid(row=0, column=11, padx=(8, 0))
+        add_btn.grid(row=2, column=2, columnspan=3, sticky="e", pady=(12, 0))
         tk.Label(add_card, text=tr("form_hint"),
                  bg=C["card"], fg=C["text_sec"], font=FONT_SMALL).pack(
                      anchor="w", padx=20, pady=(0, 12))
@@ -528,9 +529,11 @@ class PortProxyApp:
         self.tree.column("status", width=120, anchor="center")
         self.tree.column("actions", width=100, anchor="center")
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        hscrollbar = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=scrollbar.set, xscrollcommand=hscrollbar.set)
         self.tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        hscrollbar.pack(side="bottom", fill="x")
         self.tree_menu = tk.Menu(self.root, tearoff=0, bg=C["card"], fg=C["text"],
             font=FONT_UI, activebackground=C["primary"], activeforeground="#ffffff",
             bd=1, relief="solid")
@@ -543,18 +546,18 @@ class PortProxyApp:
         self.tree.tag_configure("odd", background=C["card"])
         self.tree.tag_configure("even", background=C["row_alt"])
 
-    def _field(self, parent, text, row, col):
+    def _field(self, parent, text, row, col, padx=(0, 4)):
         lbl = tk.Label(parent, text=text, bg=self.C["card"], fg=self.C["text_sec"], font=FONT_SMALL)
-        lbl.grid(row=row, column=col, sticky="sw", padx=(0, 4), pady=(0, 2))
+        lbl.grid(row=row, column=col, sticky="sw", padx=padx, pady=(0, 2))
 
-    def _entry(self, parent, row, col, width, placeholder=""):
+    def _entry(self, parent, row, col, width, placeholder="", stretch=False, padx=0):
         C = self.C
         e = tk.Entry(parent, width=width, font=FONT_MONO, bg=C["entry_bg"],
                      fg=C["text_sec"] if placeholder else C["text"],
                      bd=1, relief="solid",
                      insertbackground=C["text"], selectbackground=C["primary"],
                      selectforeground="#ffffff")
-        e.grid(row=row, column=col, sticky="w")
+        e.grid(row=row, column=col, sticky="ew" if stretch else "w", padx=padx)
         e.configure(highlightbackground=C["border"], highlightcolor=C["primary"],
                     highlightthickness=1)
         if placeholder:
@@ -771,7 +774,8 @@ class PortProxyApp:
         if not sel:
             return
         values = self.tree.item(sel[0])["values"]
-        key = (values[0].strip(), values[1], values[5])
+        # Treeview 把纯数字值读回为 int（如 8300），键统一按字符串比较
+        key = (str(values[0]).strip(), str(values[1]), str(values[5]))
         st = self._detect_details.get(key, {})
         detail = st.get("detail") if isinstance(st, dict) else None
         if not detail:
@@ -866,8 +870,8 @@ class PortProxyApp:
             messagebox.showwarning(tr("dlg_hint"), tr("msg_select_rule"), parent=self.root)
             return
         values = self.tree.item(sel[0])["values"]
-        addr, port = values[0].strip(), values[1]
-        rtype = values[5] if len(values) > 5 else "v4tov4"
+        addr, port = str(values[0]).strip(), str(values[1])
+        rtype = str(values[5]) if len(values) > 5 else "v4tov4"
         if not messagebox.askyesno(tr("dlg_del_title"),
                 tr("dlg_del_msg", addr, port), parent=self.root):
             return
@@ -932,11 +936,11 @@ class PortProxyApp:
             messagebox.showwarning(tr("dlg_hint"), tr("msg_select_rule"), parent=self.root)
             return
         values = self.tree.item(sel[0])["values"]
-        addr = values[0].strip()
-        port = values[1]
-        conn_addr = values[2].strip()
-        conn_port = values[3]
-        rtype = values[5] if len(values) > 5 else "v4tov4"
+        addr = str(values[0]).strip()
+        port = str(values[1])
+        conn_addr = str(values[2]).strip()
+        conn_port = str(values[3])
+        rtype = str(values[5]) if len(values) > 5 else "v4tov4"
         self.listen_addr.delete(0, "end")
         self.listen_addr.insert(0, addr if addr != "0.0.0.0" else "")
         self.listen_port.delete(0, "end")
